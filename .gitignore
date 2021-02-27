@@ -1,0 +1,9 @@
+*.beam
+src/migrations/
+Mnesia.nonode@nohost/
+TODO
+ebin
+deps
+.erlang.mk
+mnesia_migrate.d
+xrefr

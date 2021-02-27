@@ -1,0 +1,15 @@
+{application, go_migrate,
+ [{description, "An application to upgrade or downgrade database of an erlang app"},
+  {vsn, "git"},
+  {registered, []},
+  {applications,
+   [kernel,
+    stdlib
+   ]},
+  {env,[]},
+  {modules, []},
+
+  {maintainers, ["Amar Chand", "Srijan Choudhary"]},
+  {licenses, ["MIT"]},
+  {links, [{"Github", "https://github.com/greyorange/go_migrate"}]}
+ ]}.
