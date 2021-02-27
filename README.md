@@ -1,7 +1,7 @@
 # mnesia_migrate
-A tool to upgrade/downgrade schema and migrate data between different versions of mnesia.
+A tool to upgrade/downgrade schema and migrate data of erlang app's database
 
-[![Build Status](https://travis-ci.org/greyorange/mnesia_migrate.svg?branch=master)](https://travis-ci.org/greyorange/mnesia_migrate)
+[![Build Status](https://travis-ci.org/greyorange/go_migrate.svg?branch=main)](https://travis-ci.org/greyorange/mnesia_migrate)
 
 # Installation
 
@@ -9,11 +9,13 @@ A tool to upgrade/downgrade schema and migrate data between different versions o
 
 # Usage
 
-* Add contents of priv/sys.config to your application's sys.config or use this config in your release.
-* Use forward slash in defining directory names in sys.config
-* To use apply_downgrades/1, use a number in the argument which will downgrade that many revisions from currently applied head.
+* apply upgrade
+* apply downgrade
+* get current head
+* get current applied head
+* Pass argument `Options` type = maps:map() 
 * To enable print statements of library, add {debug, true} in sys.config
-* Run `detect_revision_sequence_conflicts()` to get a list of revision id where there is a fork in the revision tree.
+* Run `detect_revision_sequence_conflicts(Options)` to get a list of revision id where there is a fork in the revision tree.
 
 # License
 
