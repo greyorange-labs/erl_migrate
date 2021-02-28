@@ -32,7 +32,7 @@
 
 -define(TABLE, go_schema_migrations).
 
--record(go_schema_migrations_rec, 
+-record(go_schema_migrations, 
     {
         prime_key               :: {AppName :: atom(), AppDBName :: atom()},
         current_head = null     :: any()
@@ -52,7 +52,7 @@ create_go_schema_migrations_table() ->
             Attr = 
                 [
                     {disc_copies, [node()]}, 
-                    {attributes, record_info(fields, go_schema_migrations_rec)}
+                    {attributes, record_info(fields, go_schema_migrations)}
                 ],
             case mnesia:create_table(?TABLE, Attr) of
                 {atomic, ok} -> 
@@ -230,7 +230,7 @@ get_applied_head(Options) ->
             [] -> 
                 none;
             [Rec | _Empty] ->
-               Rec#go_schema_migrations_rec.current_head
+               Rec#go_schema_migrations.current_head
            end,
     print("current applied head is : ~p~n", [Head]),
     Head.
@@ -242,9 +242,9 @@ update_head(Head, Options) ->
         fun() ->
             case mnesia:wread({?TABLE, {AppName, AppDBName}}) of
                 [] ->
-                    mnesia:write(?TABLE, #go_schema_migrations_rec{prime_key = {AppName, AppDBName}, current_head = Head}, write);
+                    mnesia:write(?TABLE, #go_schema_migrations{prime_key = {AppName, AppDBName}, current_head = Head}, write);
                 [CurrRec] ->
-                    mnesia:write(CurrRec#go_schema_migrations_rec{current_head = Head})
+                    mnesia:write(CurrRec#go_schema_migrations{current_head = Head})
             end
         end
     ).
