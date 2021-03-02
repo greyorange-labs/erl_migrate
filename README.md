@@ -1,7 +1,7 @@
 # mnesia_migrate
 A tool to upgrade/downgrade schema and migrate data of erlang app's database
 
-[![Build Status](https://travis-ci.org/greyorange/go_migrate.svg?branch=main)](https://travis-ci.org/greyorange/mnesia_migrate)
+[![Build Status](https://travis-ci.org/greyorange/go_migrate.svg?branch=master)](https://travis-ci.org/greyorange/go_migrate)
 
 # Installation
 
