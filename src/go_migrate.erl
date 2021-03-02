@@ -1,6 +1,6 @@
 %% @author Gaurav Kumar <gauravkumar552@gmail.com>
 
--module(go_db_migration).
+-module(go_migrate).
 
 -export(
     [
@@ -136,7 +136,7 @@ create_migration_file(Options) ->
     erlydtl:compile(code:lib_dir(go_migrate) ++ "/schema.template", migration_template),
     NewRevisionId = "a" ++ string:substr(uuid:to_string(uuid:uuid4()),1,8),
     OldRevisionId = get_current_head(Options),
-    Filename = NewRevisionId ++ "_migration" ,
+    Filename = NewRevisionId ++ "_go_migration" ,
     {ok, Data} = migration_template:render([{new_rev_id , NewRevisionId}, {old_rev_id, OldRevisionId},
 					  {modulename, Filename}, {tabtomig, []},
 					  {commitmessage, "migration"}]),

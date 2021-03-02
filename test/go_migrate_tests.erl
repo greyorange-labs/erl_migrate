@@ -1,4 +1,4 @@
--module(go_db_migration_tests).
+-module(go_migrate_tests).
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -10,7 +10,7 @@ create_migration_file_test_() ->
                 {ok, Dir} = file:get_cwd(),
                 code:add_path(Dir),
                 %io:format("path: ~p~n", [Dir]),
-                Filename = go_db_migration:create_migration_file(
+                Filename = go_migrate:create_migration_file(
                     #{migration_src_files_dir_path => "src/migrations/"}),
                 ?assertEqual(true, filelib:is_file(Filename)),
                 ?assertCmd("rm " ++ Filename)
@@ -21,7 +21,7 @@ create_migration_file_test_() ->
             fun () ->
                 {ok, Dir} = file:get_cwd(),
                 code:add_path(Dir),
-                Filename = go_db_migration:create_migration_file(
+                Filename = go_migrate:create_migration_file(
                     #{migration_src_files_dir_path => "src/migrations/"}),
                 ?assertCmd("rm " ++ Filename)
             end
@@ -47,7 +47,7 @@ mnesia_migration_test_() ->
                 inorder,
                 [
                     {"Init Migrations should not crash",
-                        ?_assertEqual(ok, go_db_migration:create_go_schema_migrations_table())
+                        ?_assertEqual(ok, go_migrate:create_go_schema_migrations_table())
                     },
                     {
                         "Test migration calculation functions",
@@ -62,13 +62,13 @@ mnesia_migration_test_() ->
                             [
                                 {inparallel,
                                     [
-                                        ?_assertEqual(none, go_db_migration:get_applied_head(Options)),
-                                        ?_assertEqual(test1, go_db_migration:get_base_revision(Options)),
-                                        ?_assertEqual(test2, go_db_migration:get_next_revision(test1, Options)),
-                                        ?_assertEqual(test1, go_db_migration:get_prev_revision(test2, Options)),
+                                        ?_assertEqual(none, go_migrate:get_applied_head(Options)),
+                                        ?_assertEqual(test1, go_migrate:get_base_revision(Options)),
+                                        ?_assertEqual(test2, go_migrate:get_next_revision(test1, Options)),
+                                        ?_assertEqual(test1, go_migrate:get_prev_revision(test2, Options)),
                                         ?_assertEqual([test1, test2],
-                                                    go_db_migration:find_pending_migrations(Options)),
-                                        ?_assertEqual(1, go_db_migration:get_count_between_2_revisions(
+                                                    go_migrate:find_pending_migrations(Options)),
+                                        ?_assertEqual(1, go_migrate:get_count_between_2_revisions(
                                                         test1, test2, Options))
                                     ]
                                 }
@@ -85,8 +85,8 @@ mnesia_migration_test_() ->
                                 migration_beam_files_dir_path => application:get_env(go_migrate, migration_beam_dir, "ebin")
                             },
                             [
-                                ?_assertEqual({ok, applied}, go_db_migration:apply_upgrades(Options)),
-                                ?_assertEqual(test2, go_db_migration:get_applied_head(Options))
+                                ?_assertEqual({ok, applied}, go_migrate:apply_upgrades(Options)),
+                                ?_assertEqual(test2, go_migrate:get_applied_head(Options))
                             ]
                         end
                     },
@@ -101,9 +101,9 @@ mnesia_migration_test_() ->
                             },
                             [
                                 ?_assertEqual({error, wrong_number},
-                                            go_db_migration:apply_downgrades(5, Options)),
-                                ?_assertEqual(ok, go_db_migration:apply_downgrades(1, Options)),
-                                ?_assertEqual(test1, go_db_migration:get_applied_head(Options))
+                                            go_migrate:apply_downgrades(5, Options)),
+                                ?_assertEqual(ok, go_migrate:apply_downgrades(1, Options)),
+                                ?_assertEqual(test1, go_migrate:get_applied_head(Options))
                             ]
                         end
                     }

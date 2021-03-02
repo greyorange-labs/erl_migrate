@@ -1,11 +1,12 @@
-# mnesia_migrate
+# go_migrate
 A tool to upgrade/downgrade schema and migrate data of erlang app's database
 
 [![Build Status](https://travis-ci.org/greyorange/go_migrate.svg?branch=master)](https://travis-ci.org/greyorange/go_migrate)
 
 # Installation
 
-* run `make deps` if you are using erlang.mk
+* run `make deps` to install depedencies  
+* run `make` to compile code
 
 
 # Usage
@@ -21,14 +22,16 @@ Options =
 ```
 * apply upgrade
 ```
-go_db_migration:apply_upgrades(Options)
+go_migrate:apply_upgrades(Options)
+
 ```
 * apply downgrade
 ```
-go_db_migration:apply_downgrades(Options, Num)
+go_migrate:apply_downgrades(Options, Num)
+
 ```
 * To enable print statements of library, add {debug, true} in sys.config under go_migrate app config section
-* Run `go_db_migration:detect_revision_sequence_conflicts(Options)` to get a list of revision id where there is a fork in the revision tree.
+* Run `go_migrate:detect_revision_sequence_conflicts(Options)` to get a list of revision id where there is a fork in the revision tree.
 
 # License
 

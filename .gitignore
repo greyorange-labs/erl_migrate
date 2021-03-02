@@ -1,5 +1,5 @@
 *.beam
-src/migrations/
+src/migrations/*
 Mnesia.nonode@nohost/
 TODO
 ebin
