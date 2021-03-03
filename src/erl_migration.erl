@@ -1,4 +1,4 @@
--module(go_migration).
+-module(erl_migration).
 
 -callback init(Args :: list(term())) -> 'ok'.
 

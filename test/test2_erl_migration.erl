@@ -2,8 +2,8 @@
 
 %% This is an autogenerate file. Please adjust
 
--module(test2_go_migration).
--behaviour(go_migration).
+-module(test2_erl_migration).
+-behaviour(erl_migration).
 -export([up/0, down/0, get_current_rev/0, get_prev_rev/0, init/1]).
 
 init([]) -> ok.

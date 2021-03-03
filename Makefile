@@ -1,5 +1,5 @@
-PROJECT = mnesia_migrate
-PROJECT_DESCRIPTION = An application to upgrade or downgrade mnesia database
+PROJECT = erl_migrate
+PROJECT_DESCRIPTION = A tool to upgrade/downgrade schema and migrate data of erlang app's database
 PROJECT_VERSION = 0.0.1
 
 DEPS = uuid erlydtl
