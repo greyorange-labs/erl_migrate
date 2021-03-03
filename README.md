@@ -20,14 +20,19 @@ Options =
       migration_src_files_dir_path => "apps/mhs/src/migrations/"
    }
 ```
+* ceate migation src file
+```
+go_migrate:create_migration_file(Options).
+```
+
 * apply upgrade
 ```
-go_migrate:apply_upgrades(Options)
+go_migrate:apply_upgrades(Options).
 
 ```
 * apply downgrade
 ```
-go_migrate:apply_downgrades(Options, Num)
+go_migrate:apply_downgrades(Options, Num).
 
 ```
 * To enable print statements of library, add {debug, true} in sys.config under go_migrate app config section
