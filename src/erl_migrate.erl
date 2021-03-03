@@ -367,7 +367,7 @@ get_migration_beam_filepath(Options) ->
         case application:get_application() of
             undefined ->
                 maps:get(migration_beam_files_dir_path, Options, undefined);
-            AppName ->
+            {ok, AppName} ->
                 code:lib_dir(AppName, ebin) ++ "/"
         end,
     ok = filelib:ensure_dir(Path),
