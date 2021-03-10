@@ -64,11 +64,8 @@ mnesia_migration_test_() ->
                                         ?_assertEqual(none, erl_migrate:get_applied_head(?ARGS)),
                                         ?_assertEqual(test1, erl_migrate:get_base_revision(?ARGS)),
                                         ?_assertEqual(test2, erl_migrate:get_next_revision(test1, ?ARGS)),
-                                        ?_assertEqual(test1, erl_migrate:get_prev_revision(test2, ?ARGS)),
                                         ?_assertEqual([test1, test2],
-                                                    erl_migrate:find_pending_migrations(?ARGS)),
-                                        ?_assertEqual(1, erl_migrate:get_count_between_2_revisions(
-                                                        test1, test2, ?ARGS))
+                                                    erl_migrate:find_pending_migrations(?ARGS))
                                     ]
                                 }
                             ]

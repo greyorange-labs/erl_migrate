@@ -1,5 +1,3 @@
-%% @author Gaurav Kumar <gauravkumar552@gmail.com>
-
 -module(erl_migrate).
 -export(
     [
@@ -22,15 +20,13 @@
         init_db_tables/0,
         get_migration_beam_filepath/1,
         get_migration_source_filepath/1,
-        get_next_revision/2,
-        get_prev_revision/2,
-        get_count_between_2_revisions/3
+        get_next_revision/2
 	]
 ).
 -endif.
 
 -define(TABLE_1, erl_migrations).
-% -define(?TABLE_2, erl_migrations_history)
+-define(TABLE_2, erl_migrations_history).
 
 -record(erl_migrations, 
     {
@@ -39,53 +35,66 @@
     }
 ).
 
-% -record(erl_migrations_history, 
-%     {
-%         operation_id                 :: integer(),  
-%         migration_name               :: atom(),
-%         schema_name                  :: atom,
-%         operation                    :: up | down,
-%         operation_timestamp          :: calendar:local_time()      
-%     }
-% ).
+-record(erl_migrations_history, 
+    {
+        operation_id                 :: integer(),  
+        migration_name               :: atom(),
+        schema_name                  :: atom,
+        operation                    :: up | down,
+        operation_timestamp          :: calendar:local_time()      
+    }
+).
 
 start_mnesia() ->
 	mnesia:start().
 
 init_db_tables() ->
-    check_and_create_erl_migrations_table().
-    %check_and_create_erl_migrations_history_table().
-
-check_and_create_erl_migrations_table() ->
     case lists:member(?TABLE_1, mnesia:system_info(tables)) of
         true ->
             ok;
         false ->
-            print("Table erl_migration not found, creating...~n", []),
-            Attr = 
+            print("Table ~p not found, creating...~n", [?TABLE_1]),
+            Attr1 = 
                 [
                     {disc_copies, [node()]}, 
                     {attributes, record_info(fields, erl_migrations)}
                 ],
-            case mnesia:create_table(?TABLE_1, Attr) of
+            case mnesia:create_table(?TABLE_1, Attr1) of
                 {atomic, ok} -> 
                     print(" => created~n", []);
-                {aborted, Reason} -> 
-                    print("mnesia create table error: ~p~n", [Reason]),
-				    throw({error, Reason})
+                {aborted, Reason1} -> 
+                    print("mnesia create table error: ~p~n", [Reason1]),
+				    throw({error, Reason1})
+            end
+    end,
+    case lists:member(?TABLE_2, mnesia:system_info(tables)) of
+        true ->
+            ok;
+        false ->
+            print("Table ~p not found, creating...~n", [?TABLE_2]),
+            Attr2 = 
+                [
+                    {disc_copies, [node()]}, 
+                    {attributes, record_info(fields, erl_migrations_history)}
+                ],
+            case mnesia:create_table(?TABLE_2, Attr2) of
+                {atomic, ok} -> 
+                    print(" => created~n", []);
+                {aborted, Reason2} -> 
+                    print("mnesia create table error: ~p~n", [Reason2]),
+				    throw({error, Reason2})
             end
     end,
     TimeOut = application:get_env(erl_migrate, table_load_timeout, 10000),
-    ok = mnesia:wait_for_tables([?TABLE_1], TimeOut).
-
+    ok = mnesia:wait_for_tables([?TABLE_1, ?TABLE_2], TimeOut).
 
 %%
 %%Functions related to migration info
 %%
 
-get_base_revision(Options) ->
-    BeamFilesPath = get_migration_beam_filepath(Options),
-    SchemaName = maps:get(schema_name, Options),
+get_base_revision(Args) ->
+    BeamFilesPath = get_migration_beam_filepath(Args),
+    SchemaName = maps:get(schema_name, Args),
     Modulelist = filelib:wildcard(BeamFilesPath ++ "*_erl_migration.beam"),
     Res = 
         lists:filter(
@@ -100,7 +109,7 @@ get_base_revision(Options) ->
         ),
     case Res of
         [] -> 
-            print("No Base Rev module, Options = ~p~n ", [Options]),
+            print("No Base Rev module, Args = ~p~n ", [Args]),
             none;
 	    _ -> 
             BaseModuleName = list_to_atom(filename:basename(Res, ".beam")),
@@ -108,36 +117,29 @@ get_base_revision(Options) ->
             BaseModuleName:get_current_rev()
     end.
 
-get_current_head(Options) ->
-    BaseRev = get_base_revision(Options),
-    get_current_head(BaseRev, Options).
+get_current_head(Args) ->
+    BaseRev = get_base_revision(Args),
+    get_current_head(BaseRev, Args).
 
-get_revision_tree(Options) ->
-    BaseRev = get_base_revision(Options),
+get_revision_tree(Args) ->
+    BaseRev = get_base_revision(Args),
     List1 = [],
-    RevList = append_revision_tree(List1, BaseRev, Options),
+    RevList = append_revision_tree(List1, BaseRev, Args),
     print("RevList ~p~n", [RevList]),
     RevList.
 
-get_down_revision_tree(Options) ->
-    BaseRev = get_applied_head(Options),
-    List1 = [],
-    RevList = append_down_revision_tree(List1, BaseRev, Options),
-    print("RevList ~p~n", [RevList]),
-    RevList.
-
-find_pending_migrations(Options) ->
+find_pending_migrations(Args) ->
    RevList = 
-        case get_applied_head(Options) of
+        case get_applied_head(Args) of
             none -> 
-                case get_base_revision(Options) of
+                case get_base_revision(Args) of
                     none -> [] ;
-                    BaseRevId -> append_revision_tree([], BaseRevId, Options)
+                    BaseRevId -> append_revision_tree([], BaseRevId, Args)
 			     end;
             Id -> 
-                case get_next_revision(Id, Options) of
+                case get_next_revision(Id, Args) of
 			       [] -> [] ;
-			       NextId -> append_revision_tree([], NextId, Options)
+			       NextId -> append_revision_tree([], NextId, Args)
 			   end
         end,
    print("Revisions needing migration : ~p~n", [RevList]),
@@ -146,11 +148,11 @@ find_pending_migrations(Options) ->
 %%
 %% Functions related to migration creation
 %%
-create_migration_file(Options) ->
+create_migration_file(Args) ->
     erlydtl:compile(code:lib_dir(erl_migrate) ++ "/schema.template", migration_template),
     NewRevisionId = "a" ++ string:substr(uuid:to_string(uuid:uuid4()),1,8),
-    OldRevisionId = get_current_head(Options),
-    SchemaName = maps:get(schema_name, Options),
+    OldRevisionId = get_current_head(Args),
+    SchemaName = maps:get(schema_name, Args),
     Filename = NewRevisionId ++ "_erl_migration" ,
     {ok, Data} = migration_template:render(
             [
@@ -162,7 +164,7 @@ create_migration_file(Options) ->
                 {schema_name, SchemaName}
             ]
         ),
-    SrcFilesPath = get_migration_source_filepath(Options),
+    SrcFilesPath = get_migration_source_filepath(Args),
     file:write_file(SrcFilesPath ++ Filename ++ ".erl", Data),
     print("New file created ~p~n", [Filename ++ ".erl"]),
     SrcFilesPath ++ Filename ++ ".erl".
@@ -171,10 +173,10 @@ create_migration_file(Options) ->
 %% Functions related to applying migrations
 %%
 
-apply_upgrades(Options) ->
+apply_upgrades(Args) ->
     init_db_tables(),
-    RevList = find_pending_migrations(Options),
-    CurrHead = get_current_head(Options),
+    RevList = find_pending_migrations(Args),
+    CurrHead = get_current_head(Args),
     case RevList of
         [] -> 
             print("No pending revision found ~n", []),
@@ -187,66 +189,47 @@ apply_upgrades(Options) ->
                         print("ModuleName = ~p, RevId = ~p~n", [ModuleName, RevId]),
                         print("Running upgrade ~p -> ~p ~n",[ModuleName:get_prev_rev(), ModuleName:get_current_rev()]),
                         ModuleName:up(),
+                        update_history(RevId, Args, up),
                         RevId
                     end,
                     CurrHead, RevList
                 ),
-            update_head(NewHead, Options),
+            update_head(NewHead, Args),
             print("all upgrades successfully applied.~n", []),
             {ok, NewHead}
     end.
 
-apply_downgrades(Options, DownNum) ->
-    CurrHead = get_applied_head(Options),
-    Count = get_count_between_2_revisions(get_base_revision(Options), CurrHead, Options),
-    case DownNum =< Count of
-        false -> 
-            print("Wrong number for downgrade ~n", []),
-            {error, wrong_number};
-        true -> 
-            RevList = get_down_revision_tree(Options),
-            SubList = lists:sublist(RevList, 1, DownNum),
-            case SubList of
-                [] -> 
-                    print("No down revision found ~n", []),
-                    {ok, CurrHead};
-                _ ->
-                    NewHead =
-                        lists:foldl(
-                            fun(RevId, _Acc) -> 
-                                ModuleName = list_to_atom(atom_to_list(RevId) ++ "_erl_migration") ,
-                                print("Running downgrade ~p -> ~p ~n",[ModuleName:get_current_rev(), ModuleName:get_prev_rev()]),
-                                ModuleName:down(),
-                                ModuleName:get_prev_rev()
-                            end,
-                            CurrHead, SubList
-                        ),                    
-                    update_head(NewHead, Options),
-                    print("all downgrades successfully applied.~n", []),
-                    {ok, NewHead}
-            end
-    end.
+apply_downgrades(Args, DownNum) ->
+    CurrHead = get_applied_head(Args),
+    NewHead = downgrade(CurrHead, Args, DownNum),
+    update_head(NewHead, Args),
+    print("all downgrades successfully applied.~n", []),
+    {ok, NewHead}.
 
-append_revision_tree(List1, RevId, Options) ->
-    case get_next_revision(RevId, Options) of
+downgrade(CurrHead, _Args, 0) ->
+    CurrHead;
+
+downgrade(none, _Args, _DownNum) ->
+    none;
+
+downgrade(CurrHead, Args, DownNum) ->
+    ModuleName = list_to_atom(atom_to_list(CurrHead) ++ "_erl_migration"),
+    print("Running downgrade ~p -> ~p ~n",[ModuleName:get_current_rev(), ModuleName:get_prev_rev()]),
+    ModuleName:down(),
+    update_history(CurrHead, Args, down),
+    downgrade(ModuleName:get_prev_rev(), Args, DownNum - 1). 
+
+append_revision_tree(List1, RevId, Args) ->
+    case get_next_revision(RevId, Args) of
         [] -> 
             List1 ++ [RevId];
 	    NewRevId ->
 		    List2 = List1 ++ [RevId],
-	        append_revision_tree(List2, NewRevId, Options)
+	        append_revision_tree(List2, NewRevId, Args)
     end.
 
-append_down_revision_tree(List1, RevId, Options) ->
-    case get_prev_revision(RevId, Options) of
-        [] -> 
-            List1 ++ [RevId];
-	    NewRevId ->
-		    List2 = List1 ++ [RevId],
-	        append_down_revision_tree(List2, NewRevId, Options)
-    end.
-
-get_applied_head(Options) ->
-    SchemaName = maps:get(schema_name, Options, undefined),
+get_applied_head(Args) ->
+    SchemaName = maps:get(schema_name, Args, undefined),
     {atomic, KeyList} = 
         mnesia:transaction(
             fun() -> 
@@ -263,8 +246,8 @@ get_applied_head(Options) ->
     print("current applied head is : ~p~n", [Head]),
     Head.
 
-update_head(Head, Options) ->
-    SchemaName = maps:get(schema_name, Options, undefined),
+update_head(Head, Args) ->
+    SchemaName = maps:get(schema_name, Args, undefined),
     mnesia:transaction(
         fun() ->
             case mnesia:wread({?TABLE_1, SchemaName}) of
@@ -275,6 +258,30 @@ update_head(Head, Options) ->
             end
         end
     ).
+
+update_history(RevId, Args, Operation) ->
+    SchemaName = maps:get(schema_name, Args, undefined),
+    mnesia:transaction(
+        fun() ->
+            OperationId = 
+                case mnesia:all_keys(?TABLE_2) of
+                    [] ->
+                        1;
+                    CurrentOperations ->
+                        lists:max(CurrentOperations) + 1
+                end, 
+            NewRecord = 
+                #erl_migrations_history{
+                    operation_id = OperationId,
+                    migration_name = RevId,
+                    schema_name = SchemaName, 
+                    operation = Operation,
+                    operation_timestamp = calendar:local_time()
+                }, 
+            mnesia:write(?TABLE_2, NewRecord, write)
+        end
+    ).
+
 %%
 %% helper functions
 %%
@@ -301,31 +308,9 @@ is_erl_migration_module(Modulename, SchemaName) ->
             Cond1 andalso Cond2
     end.
 
-get_prev_revision(RevId, Options) ->
-    SchemaName = maps:get(schema_name, Options, undefined),
-    CurrModuleName = list_to_atom(atom_to_list(RevId) ++ "_erl_migration"),
-    Modulelist = filelib:wildcard(get_migration_beam_filepath(Options) ++ "*_erl_migration.beam"),
-    Res = 
-        lists:filter(
-            fun(Filename) ->
-                Modulename = list_to_atom(filename:basename(Filename, ".beam")),
-                case is_erl_migration_module(Modulename, SchemaName) of
-	                true -> Modulename:get_current_rev() =:= CurrModuleName:get_prev_rev();
-	                false -> false
-	            end
-            end,
-            Modulelist
-        ),
-    case Res of
-        [] -> [];
-        _ -> 
-            ModuleName = list_to_atom(filename:basename(Res, ".beam")), 
-            ModuleName:get_current_rev()
-    end.
-
-get_next_revision(RevId, Options) ->
-    SchemaName = maps:get(schema_name, Options, undefined),
-    Modulelist = filelib:wildcard(get_migration_beam_filepath(Options) ++ "*_erl_migration.beam"),
+get_next_revision(RevId, Args) ->
+    SchemaName = maps:get(schema_name, Args, undefined),
+    Modulelist = filelib:wildcard(get_migration_beam_filepath(Args) ++ "*_erl_migration.beam"),
     Res = 
         lists:filter(
             fun(Filename) ->
@@ -344,16 +329,16 @@ get_next_revision(RevId, Options) ->
             ModuleName:get_current_rev()
     end.
 
-get_current_head(RevId, Options) ->
-    case get_next_revision(RevId, Options) of
+get_current_head(RevId, Args) ->
+    case get_next_revision(RevId, Args) of
 	    [] -> 
             RevId ;
         NextRevId -> 
-            get_current_head(NextRevId, Options)
+            get_current_head(NextRevId, Args)
     end.
 
-get_migration_source_filepath(Options) ->
-    case maps:get(migration_src_files_dir_path, Options, undefined) of
+get_migration_source_filepath(Args) ->
+    case maps:get(migration_src_files_dir_path, Args, undefined) of
         undefined ->
             Val = application:get_env(erl_migrate, migration_source_dir, "src/migrations/"),
             ok = filelib:ensure_dir(Val),
@@ -362,21 +347,16 @@ get_migration_source_filepath(Options) ->
             SrcFilesPath
     end.
 
-get_migration_beam_filepath(Options) ->
+get_migration_beam_filepath(Args) ->
     Path =
         case application:get_application() of
             undefined ->
-                maps:get(migration_beam_files_dir_path, Options, undefined);
+                maps:get(migration_beam_files_dir_path, Args, undefined);
             {ok, AppName} ->
                 code:lib_dir(AppName, ebin) ++ "/"
         end,
     ok = filelib:ensure_dir(Path),
     Path.
-
-get_count_between_2_revisions(RevStart, RevEnd, Options) ->
-    RevList = get_revision_tree(Options),
-    Count = string:str(RevList, [RevEnd])  - string:str(RevList, [RevStart]),
-    Count.
 
 print(Statement, Arg) ->
     case application:get_env(erl_migrate, verbose, false) of
@@ -384,10 +364,10 @@ print(Statement, Arg) ->
         false -> ok
     end.
 
-detect_revision_sequence_conflicts(Options) ->
-    SchemaName = maps:get(schema_name, Options, undefined),
-    Tree = get_revision_tree(Options),
-    Modulelist = filelib:wildcard(get_migration_beam_filepath(Options) ++ "*_erl_migration.beam"),
+detect_revision_sequence_conflicts(Args) ->
+    SchemaName = maps:get(schema_name, Args, undefined),
+    Tree = get_revision_tree(Args),
+    Modulelist = filelib:wildcard(get_migration_beam_filepath(Args) ++ "*_erl_migration.beam"),
     ConflictId = 
         lists:filter(
             fun(RevId) ->
