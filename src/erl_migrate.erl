@@ -92,6 +92,9 @@ init_db_tables() ->
 %%Functions related to migration info
 %%
 
+-spec get_base_revision(
+    Args :: maps:map()
+) -> BaseRev :: none | atom().
 get_base_revision(Args) ->
     BeamFilesPath = get_migration_beam_filepath(Args),
     SchemaName = maps:get(schema_name, Args),
@@ -117,10 +120,16 @@ get_base_revision(Args) ->
             BaseModuleName:get_current_rev()
     end.
 
+-spec get_current_head(
+    Args :: maps:map()
+) -> CurrentHead :: none | atom().
 get_current_head(Args) ->
     BaseRev = get_base_revision(Args),
     get_current_head(BaseRev, Args).
 
+-spec get_revision_tree(
+    Args :: maps:map()
+) -> RevList :: list().
 get_revision_tree(Args) ->
     BaseRev = get_base_revision(Args),
     List1 = [],
@@ -128,8 +137,11 @@ get_revision_tree(Args) ->
     print("RevList ~p~n", [RevList]),
     RevList.
 
+-spec find_pending_migrations(
+    Args :: maps:map()
+) -> RevList :: list().
 find_pending_migrations(Args) ->
-   RevList = 
+    RevList = 
         case get_applied_head(Args) of
             none -> 
                 case get_base_revision(Args) of
@@ -142,12 +154,15 @@ find_pending_migrations(Args) ->
 			       NextId -> append_revision_tree([], NextId, Args)
 			   end
         end,
-   print("Revisions needing migration : ~p~n", [RevList]),
-   RevList.
+    print("Revisions needing migration : ~p~n", [RevList]),
+    RevList.
 
 %%
 %% Functions related to migration creation
 %%
+-spec create_migration_file(
+    Args :: maps:map()
+) -> Path :: string().
 create_migration_file(Args) ->
     erlydtl:compile(code:lib_dir(erl_migrate) ++ "/schema.template", migration_template),
     NewRevisionId = "a" ++ string:substr(uuid:to_string(uuid:uuid4()),1,8),
@@ -173,6 +188,10 @@ create_migration_file(Args) ->
 %% Functions related to applying migrations
 %%
 
+-spec apply_upgrades(
+    Args :: maps:map()
+) ->
+    Output :: {ok, NewHead :: atom(), RevList :: list()}.
 apply_upgrades(Args) ->
     init_db_tables(),
     RevList = find_pending_migrations(Args),
@@ -180,7 +199,7 @@ apply_upgrades(Args) ->
     case RevList of
         [] -> 
             print("No pending revision found ~n", []),
-            {ok, CurrHead};
+            {ok, CurrHead, RevList};
         _ ->
             NewHead =
                 lists:foldl(
@@ -196,29 +215,46 @@ apply_upgrades(Args) ->
                 ),
             update_head(NewHead, Args),
             print("all upgrades successfully applied.~n", []),
-            {ok, NewHead}
+            {ok, NewHead, RevList}
     end.
 
+-spec apply_downgrades(
+    Args :: maps:map(),
+    DownNum :: integer()
+) ->
+    Output :: {ok, NewHead :: atom(), RevList :: list()}.
 apply_downgrades(Args, DownNum) ->
     CurrHead = get_applied_head(Args),
-    NewHead = downgrade(CurrHead, Args, DownNum),
+    {NewHead, DownRevList} = downgrade(CurrHead, Args, DownNum, []),
     update_head(NewHead, Args),
     print("all downgrades successfully applied.~n", []),
-    {ok, NewHead}.
+    {ok, NewHead, DownRevList}.
 
-downgrade(CurrHead, _Args, 0) ->
-    CurrHead;
+-spec downgrade(
+    CurrHead :: none | atom(),
+    Args :: maps:map(),
+    DownNum :: integer(),
+    DownRevList :: list()
+) ->
+    Output :: {NewHead :: none | atom(), NewDownRevList :: list()}.
+downgrade(CurrHead, _Args, 0, DownRevList) ->
+    {CurrHead, DownRevList};
 
-downgrade(none, _Args, _DownNum) ->
-    none;
+downgrade(none, _Args, _DownNum, NewDownRevList) ->
+    {none, NewDownRevList};
 
-downgrade(CurrHead, Args, DownNum) ->
+downgrade(CurrHead, Args, DownNum, NewDownRevList) ->
     ModuleName = list_to_atom(atom_to_list(CurrHead) ++ "_erl_migration"),
     print("Running downgrade ~p -> ~p ~n",[ModuleName:get_current_rev(), ModuleName:get_prev_rev()]),
     ModuleName:down(),
     update_history(CurrHead, Args, down),
-    downgrade(ModuleName:get_prev_rev(), Args, DownNum - 1). 
+    downgrade(ModuleName:get_prev_rev(), Args, DownNum - 1, NewDownRevList ++ [CurrHead]). 
 
+-spec append_revision_tree(
+    List1 :: list(),
+    RevId :: atom(),
+    Args :: maps:map()
+) -> List2 :: list().
 append_revision_tree(List1, RevId, Args) ->
     case get_next_revision(RevId, Args) of
         [] -> 
@@ -228,6 +264,10 @@ append_revision_tree(List1, RevId, Args) ->
 	        append_revision_tree(List2, NewRevId, Args)
     end.
 
+-spec get_applied_head(
+    Args :: maps:map()
+) ->
+    AppliedHead :: atom().
 get_applied_head(Args) ->
     SchemaName = maps:get(schema_name, Args, undefined),
     {atomic, KeyList} = 
@@ -246,6 +286,10 @@ get_applied_head(Args) ->
     print("current applied head is : ~p~n", [Head]),
     Head.
 
+-spec update_head(
+    Head :: atom(),
+    Args :: maps:map()
+) -> any().
 update_head(Head, Args) ->
     SchemaName = maps:get(schema_name, Args, undefined),
     mnesia:transaction(
@@ -259,6 +303,11 @@ update_head(Head, Args) ->
         end
     ).
 
+-spec update_history(
+    RevId :: atom(),
+    Args :: maps:map(),
+    Operation :: up | down
+) -> any().
 update_history(RevId, Args, Operation) ->
     SchemaName = maps:get(schema_name, Args, undefined),
     mnesia:transaction(
@@ -286,6 +335,10 @@ update_history(RevId, Args, Operation) ->
 %% helper functions
 %%
 
+-spec is_erl_migration_module(
+    Modulename :: atom(), 
+    SchemaName :: any()
+) -> boolean().
 is_erl_migration_module(Modulename, SchemaName) ->
     case catch Modulename:module_info(attributes) of
         {'EXIT', {undef, _}} ->
@@ -308,6 +361,10 @@ is_erl_migration_module(Modulename, SchemaName) ->
             Cond1 andalso Cond2
     end.
 
+-spec get_next_revision(
+    RevId :: atom(),
+    Args :: maps:map()
+) -> [] | atom().
 get_next_revision(RevId, Args) ->
     SchemaName = maps:get(schema_name, Args, undefined),
     Modulelist = filelib:wildcard(get_migration_beam_filepath(Args) ++ "*_erl_migration.beam"),
@@ -329,6 +386,10 @@ get_next_revision(RevId, Args) ->
             ModuleName:get_current_rev()
     end.
 
+-spec get_current_head(
+    RevId :: atom(),
+    Args :: maps:map()
+) -> none | atom().
 get_current_head(RevId, Args) ->
     case get_next_revision(RevId, Args) of
 	    [] -> 
@@ -337,6 +398,9 @@ get_current_head(RevId, Args) ->
             get_current_head(NextRevId, Args)
     end.
 
+-spec get_migration_source_filepath(
+    Args :: maps:map()
+) -> Path :: string().
 get_migration_source_filepath(Args) ->
     case maps:get(migration_src_files_dir_path, Args, undefined) of
         undefined ->
@@ -347,13 +411,17 @@ get_migration_source_filepath(Args) ->
             SrcFilesPath
     end.
 
+-spec get_migration_beam_filepath(
+    Args :: maps:map()
+) -> Path :: string().
 get_migration_beam_filepath(Args) ->
     Path =
-        case application:get_application() of
+        case maps:get(migration_beam_files_dir_path, Args, undefined) of
             undefined ->
-                maps:get(migration_beam_files_dir_path, Args, undefined);
-            {ok, AppName} ->
-                code:lib_dir(AppName, ebin) ++ "/"
+                {ok, AppName} = application:get_application(),
+                code:lib_dir(AppName, ebin) ++ "/";
+            InputPath ->
+                InputPath
         end,
     ok = filelib:ensure_dir(Path),
     Path.
