@@ -1,10 +1,15 @@
 -module(erl_migration).
 
--callback init(Args :: list(term())) -> 'ok'.
+-callback init(Args :: list(term())) -> ok.
 
-%
-%-callback handle(Event :: atom()) -> NextEvent :: atom().
-%
-%-callback sync(Node :: node(), Timeout :: non_neg_integer()) -> 'ok'.
-%
+-callback get_current_rev() -> any().
+
+-callback get_prev_rev() -> any().
+
+-callback up() -> any().
+
+-callback down() -> any().
+
+
+
 

@@ -4,6 +4,7 @@
 
 -module(test1_erl_migration).
 -behaviour(erl_migration).
+-schema_name(schema_name).
 -export([up/0, down/0, get_current_rev/0, get_prev_rev/0, init/1]).
 
 init([]) -> ok.
@@ -14,29 +15,8 @@ get_current_rev() ->
 get_prev_rev() ->
     none.
 
--record(test_table, {sample_column_1=null, extra_info=null}).
-
 up() ->
-    Attr = [{ram_copies, [node()]}, {attributes, record_info(fields, test_table)}],
-    case mnesia:create_table(test_table, Attr) of
-        {atomic, ok} ->
-            io:format("table created~n", []),
-            mnesia:transaction(
-              fun() ->
-                      mnesia:write(
-                        test_table,
-                        #test_table{sample_column_1 = test_val},
-                        write)
-              end),
-            {atomic, ValList} =
-                mnesia:transaction(
-                  fun() ->
-                          mnesia:all_keys(test_table)
-                  end),
-            hd(ValList);
-        {aborted, Reason} -> io:format("mnesia create table error: ~p~n", [Reason]),
-                             throw({error, Reason})
-    end.
+   io:format("test1: up callled~n").
 
 down() ->
-    mnesia:delete_table(test_table).
+   io:format("test1: down callled~n").

@@ -133,7 +133,8 @@ get_current_head(Args) ->
 ) -> [] | atom().
 get_next_revision(RevId, Args) ->
     SchemaName = maps:get(schema_name, Args),
-    Modulelist = filelib:wildcard(get_migration_beam_filepath(Args) ++ "*_erl_migration.beam"),
+    BeamFilesPath = get_migration_beam_filepath(Args),
+    Modulelist = filelib:wildcard(BeamFilesPath ++ "*_erl_migration.beam"),
     Res = 
         lists:filter(
             fun(Filename) ->
@@ -298,7 +299,7 @@ apply_downgrades(Args, DownNum) ->
     DownRevList :: list()
 ) ->
     Output :: {NewHead :: none | atom(), NewDownRevList :: list()}.
-downgrade(CurrHead, _Args, 1, DownRevList) ->
+downgrade(CurrHead, _Args, 0, DownRevList) ->
     {CurrHead, DownRevList};
 
 downgrade(none, _Args, _DownNum, NewDownRevList) ->
@@ -306,10 +307,19 @@ downgrade(none, _Args, _DownNum, NewDownRevList) ->
 
 downgrade(CurrHead, Args, DownNum, NewDownRevList) ->
     ModuleName = list_to_atom(atom_to_list(CurrHead) ++ "_erl_migration"),
-    print("Running downgrade ~p -> ~p ~n",[ModuleName:get_current_rev(), ModuleName:get_prev_rev()]),
-    ModuleName:down(),
-    update_history(CurrHead, Args, down),
-    downgrade(ModuleName:get_prev_rev(), Args, DownNum - 1, NewDownRevList ++ [CurrHead]). 
+    ParentHead = ModuleName:get_prev_rev(),
+    CurrentHead = ModuleName:get_current_rev(),
+    DownGradeBaseRevision = maps:get(down_base_migration, Args, false),
+    if
+        ParentHead == none andalso (not DownGradeBaseRevision) ->
+            print("Not downgrading base revision ~p ~n", [CurrentHead]),
+            {CurrentHead, NewDownRevList};
+        true ->
+            print("Running downgrade ~p -> ~p ~n",[CurrentHead, ParentHead]),
+            ModuleName:down(),
+            update_history(CurrHead, Args, down),
+            downgrade(ModuleName:get_prev_rev(), Args, DownNum - 1, NewDownRevList ++ [CurrHead])
+    end.
 
 -spec append_revision_tree(
     List1 :: list(),
