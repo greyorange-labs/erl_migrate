@@ -2,6 +2,7 @@
 -export(
     [
         start_mnesia/0,
+        get_current_time/0,
         get_base_revision/1,
         get_current_head/1,
         create_migration_file/1,
@@ -44,6 +45,9 @@
         timestamp                    :: calendar:local_time()      
     }
 ).
+
+get_current_time() ->
+    calendar:local_time().    
 
 start_mnesia() ->
 	mnesia:start().
@@ -378,7 +382,7 @@ update_history(RevId, Args, Operation) ->
                     migration_name = RevId,
                     id = Id, 
                     operation = Operation,
-                    timestamp = calendar:local_time()
+                    timestamp = erl_migrate:get_current_time()
                 }, 
             mnesia:write(?TABLE_2, NewRecord, write)
         end

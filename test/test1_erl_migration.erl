@@ -4,7 +4,7 @@
 
 -module(test1_erl_migration).
 -behaviour(erl_migration).
--schema_name(schema_name).
+-schema_name(schema_name_1).
 -export([up/0, down/0, get_current_rev/0, get_prev_rev/0, init/1]).
 
 init([]) -> ok.
