@@ -22,7 +22,7 @@ A tool to upgrade/downgrade schema and migrate data of an erlang app's database(
    }
 ```
 
-* create migation src file
+* create migration file
 ```
 Args = 
    #{
@@ -48,7 +48,7 @@ erl_migrate:apply_downgrades(Args, Num).
 
 ```
 
-* detect revesion seq conflicts
+* detect revision seq conflicts
 ```
 Args =
    #{schema_name => schema_name_1},
