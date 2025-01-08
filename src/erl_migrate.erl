@@ -241,14 +241,13 @@ create_migration_file(Args) ->
                 {old_rev_id, OldRevisionId},
                 {modulename, Filename},
                 {tabtomig, []},
-                {commitmessage, "migration"},
                 {schema_name, SchemaName}
             ]
         ),
     SrcFilesPath = get_migration_source_filepath(Args),
-    file:write_file(SrcFilesPath ++ Filename ++ ".erl", Data),
-    print("New file created ~p~n", [Filename ++ ".erl"]),
-    SrcFilesPath ++ Filename ++ ".erl".
+    FilePath = SrcFilesPath ++ Filename ++ ".erl",
+    ok = file:write_file(FilePath, Data),
+    io:format("Migration file created at ~ts~n", [FilePath]).
 
 %%
 %% Functions related to applying migrations
@@ -428,6 +427,7 @@ get_migration_source_filepath(Args) ->
             ok = filelib:ensure_dir(Val),
             Val;
         SrcFilesPath ->
+            ok = filelib:ensure_dir(SrcFilesPath),
             SrcFilesPath
     end.
 
