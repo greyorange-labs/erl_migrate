@@ -5,57 +5,62 @@ A tool to upgrade/downgrade schema and migrate data of an erlang app's database(
 
 # Installation
 
-* run `make deps` to install depedencies  
+* run `make deps` to install depedencies
 * run `make` to compile code
 * run `make eunit` to test UT's
 
 
 # Usage
-* Data structure of Argument `Args` is a map
-```
+### Create migration file
+```erlang
+Args =
    #{
-      schema_name => NameOfSchema,
-      migration_src_files_path => SrcFilePath,
-      migration_beam_files_path => BeamFilePath,
-      schema_instance => SchemaInstanceName,
-      down_base_migration => boolean()
-   }
-```
-
-* create migration file
-```
-Args = 
-   #{
-      schema_name => schema_name_1, 
-      migration_src_files_path => "apps/app_name/src/migrations",
-      migration_beam_files_path => "/opt/app_name/ebin"
-   }
+      schema_name => schema_name_1,
+      migration_src_files_path => "apps/app_name/src/migrations"
+   },
 erl_migrate:create_migration_file(Args).
 ```
 
-* apply upgrade
-```
+### Apply Upgrade
+```erlang
 Args =
-   #{schema_name => schema_name_1, schema_instance => schema_instance_1},
+   #{
+      schema_name => schema_name_1,
+      schema_instance => schema_instance_1,
+      migration_beam_files_dir_path => "path/of/app/ebin/"
+   },
 erl_migrate:apply_upgrades(Args).
 
 ```
-* apply downgrade
-```
+### Apply Downgrade
+```erlang
 Args =
-   #{schema_name => schema_name_1, schema_instance_1},
+   #{
+      schema_name => schema_name_1,
+      schema_instance_1
+   },
+%% Num: # of migrations to downgrade
 erl_migrate:apply_downgrades(Args, Num).
-
 ```
 
-* detect revision seq conflicts
-```
-Args =
-   #{schema_name => schema_name_1},
+### Detect revision seq conflicts
+```erlang
+Args = #{schema_name => schema_name_1},
 erl_migrate:detect_revision_sequence_conflicts(Args, Num).
 ```
 
-* To enable print statements of library, add {debug, true} in sys.config under erl_migrate app config section
+### Configs
+To enable print statements of library, add `{debug, true}` in sys.config under erl_migrate app config section, for example ->
+```erlang
+sys.config
+[
+   ....Other app configs
+   {erl_migrate,[
+      {debug, true}
+   ]},
+   ....Other app configs
+]
+```
 
 # License
 
