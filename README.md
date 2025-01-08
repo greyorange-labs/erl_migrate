@@ -16,7 +16,8 @@ A tool to upgrade/downgrade schema and migrate data of an erlang app's database(
 Args =
    #{
       schema_name => schema_name_1,
-      migration_src_files_path => "apps/app_name/src/migrations"
+      migration_src_files_path => "apps/app_name/src/migrations",
+      migration_beam_files_path => "_build/default/lib/{{AppName}}/ebin/
    },
 erl_migrate:create_migration_file(Args).
 ```
