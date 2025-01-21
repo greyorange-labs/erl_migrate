@@ -264,8 +264,7 @@ apply_upgrades(Args) ->
         DanglingMigrations ->
             print("Error!!! Dangling migrations found: ~p", [DanglingMigrations]),
             exit("Dangling migrations found")
-    end,
-    ok.
+    end.
 
 -spec apply_downgrades(
     Args :: maps:map(),
