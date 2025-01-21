@@ -231,33 +231,41 @@ create_migration_file(Args) ->
 ) ->
     Output :: {ok, NewHead :: atom(), RevList :: list()}.
 apply_upgrades(Args) ->
+    print("Applying mnesia migrations for input = ~p...........", [Args]),
     ok = init_db_tables(),
     RevList = find_pending_migrations(Args),
     CurrHead = get_current_head(Args),
-    case RevList of
+    case get_dangling_migrations(Args) of
         [] ->
-            print("No pending revision found ~n", []),
-            {ok, CurrHead, RevList};
-        _ ->
-            NewHead =
-                lists:foldl(
-                    fun(RevId, _Acc) ->
-                        ModuleName = list_to_atom(atom_to_list(RevId) ++ "_erl_migration"),
-                        print("ModuleName = ~p, RevId = ~p~n", [ModuleName, RevId]),
-                        print("Running upgrade ~p -> ~p ~n", [
-                            ModuleName:get_prev_rev(), ModuleName:get_current_rev()
-                        ]),
-                        ModuleName:up(),
-                        update_history(RevId, Args, up),
-                        RevId
-                    end,
-                    CurrHead,
-                    RevList
-                ),
-            update_head(NewHead, Args),
-            print("all upgrades successfully applied.~n", []),
-            {ok, NewHead, RevList}
-    end.
+            case RevList of
+                [] ->
+                    print("No pending revision found for input ~p ~n", [Args]),
+                    {ok, CurrHead, RevList};
+                _ ->
+                    NewHead =
+                        lists:foldl(
+                            fun(RevId, _Acc) ->
+                                ModuleName = list_to_atom(atom_to_list(RevId) ++ "_erl_migration"),
+                                print("ModuleName = ~p, RevId = ~p~n", [ModuleName, RevId]),
+                                print("Running upgrade ~p -> ~p ~n", [
+                                    ModuleName:get_prev_rev(), ModuleName:get_current_rev()
+                                ]),
+                                ModuleName:up(),
+                                update_history(RevId, Args, up),
+                                RevId
+                            end,
+                            CurrHead,
+                            RevList
+                        ),
+                    update_head(NewHead, Args),
+                    print("All upgrades successfully applied for input ~p~n", [Args]),
+                    {ok, NewHead, RevList}
+            end;
+        DanglingMigrations ->
+            print("Error!!! Dangling migrations found: ~p", [DanglingMigrations]),
+            exit("Dangling migrations found")
+    end,
+    ok.
 
 -spec apply_downgrades(
     Args :: maps:map(),
@@ -419,7 +427,7 @@ get_migration_beam_filepath(Args) ->
     Path.
 
 print(Statement, Arg) ->
-    case application:get_env(erl_migrate, verbose, false) of
+    case application:get_env(erl_migrate, verbose, true) of
         true -> io:format(Statement, Arg);
         false -> ok
     end.
@@ -495,6 +503,6 @@ print_row(RowData) ->
     lists:foreach(fun(V) -> io:format("~-*s | ", [30, V]) end, RowData),
     io:format("~n").
 
-get_dangling_migrations() ->
+get_dangling_migrations(_Args) ->
     %% TODO: implement this function
     [].
