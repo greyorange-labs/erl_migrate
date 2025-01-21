@@ -420,7 +420,7 @@ print(Statement, Arg) ->
         false -> ok
     end.
 
-detect_revision_sequence_conflicts(#{schema_name := Schema, schema_instance := Instance} = Args) ->
+detect_revision_sequence_conflicts(#{schema_name := Schema} = Args) ->
     SchemaName = maps:get(schema_name, Args, undefined),
     Tree = get_revision_tree(Args),
     Modulelist = filelib:wildcard(get_migration_beam_filepath(Args) ++ "*_erl_migration.beam"),
@@ -440,7 +440,7 @@ detect_revision_sequence_conflicts(#{schema_name := Schema, schema_instance := I
                     ),
                 case length(Res) > 1 of
                     true ->
-                        print("~p.~p: Conflict detected at revision id ~p~n", [Schema, Instance, RevId]),
+                        print("~p.~p: Conflict detected at revision id ~p~n", [Schema, RevId]),
                         true;
                     false ->
                         false
