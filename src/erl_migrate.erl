@@ -427,7 +427,7 @@ get_migration_beam_filepath(Args) ->
 
 print(Statement, Arg) ->
     case application:get_env(erl_migrate, verbose, true) of
-        true -> io:format(Statement, Arg);
+        true -> io:format(Statement ++ "~n", Arg);
         false -> ok
     end.
 
