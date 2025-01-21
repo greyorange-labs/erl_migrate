@@ -29,7 +29,6 @@ init_db_tables() ->
         true ->
             ok;
         false ->
-            print("Table ~p not found, creating...~n", [?TABLE_1]),
             Attr1 =
                 [
                     {disc_copies, [node()]},
@@ -37,9 +36,8 @@ init_db_tables() ->
                 ],
             case mnesia:create_table(?TABLE_1, Attr1) of
                 {atomic, ok} ->
-                    print(" => created~n", []);
+                    ok;
                 {aborted, Reason1} ->
-                    print("mnesia create table error: ~p~n", [Reason1]),
                     throw({error, Reason1})
             end
     end,
@@ -47,7 +45,6 @@ init_db_tables() ->
         true ->
             ok;
         false ->
-            print("Table ~p not found, creating...~n", [?TABLE_2]),
             Attr2 =
                 [
                     {disc_copies, [node()]},
@@ -55,9 +52,8 @@ init_db_tables() ->
                 ],
             case mnesia:create_table(?TABLE_2, Attr2) of
                 {atomic, ok} ->
-                    print(" => created~n", []);
+                    ok;
                 {aborted, Reason2} ->
-                    print("mnesia create table error: ~p~n", [Reason2]),
                     throw({error, Reason2})
             end
     end,
@@ -88,11 +84,9 @@ get_base_revision(Args) ->
         ),
     case Res of
         [] ->
-            print("No Base Rev module, Args = ~p~n ", [Args]),
             none;
         _ ->
             BaseModuleName = list_to_atom(filename:basename(Res, ".beam")),
-            print("Base Rev module is ~p~n", [BaseModuleName]),
             BaseModuleName:get_current_rev()
     end.
 
@@ -149,7 +143,6 @@ get_revision_tree(Args) ->
     BaseRev = get_base_revision(Args),
     List1 = [],
     RevList = append_revision_tree(List1, BaseRev, Args),
-    print("RevList ~p~n", [RevList]),
     RevList.
 
 -spec get_applied_head(
@@ -173,7 +166,6 @@ get_applied_head(Args) ->
             [Rec | _Empty] ->
                 Rec#erl_migrations.current_head
         end,
-    print("current applied head is : ~p~n", [Head]),
     Head.
 
 -spec find_pending_migrations(
@@ -193,7 +185,6 @@ find_pending_migrations(Args) ->
                     NextId -> append_revision_tree([], NextId, Args)
                 end
         end,
-    print("Revisions needing migration : ~p~n", [RevList]),
     RevList.
 
 %%
@@ -226,30 +217,24 @@ create_migration_file(Args) ->
 %% Functions related to applying migrations
 %%
 
--spec apply_upgrades(
-    Args :: maps:map()
-) ->
+-spec apply_upgrades(Args :: maps:map()) ->
     Output :: {ok, NewHead :: atom(), RevList :: list()}.
-apply_upgrades(Args) ->
-    print("Applying mnesia migrations for input = ~p...........", [Args]),
+apply_upgrades(#{schema_name := Schema, schema_instance := Instance} = Args) ->
+    print("~p.~p: Applying migrations.........", [Schema, Instance]),
     ok = init_db_tables(),
-    RevList = find_pending_migrations(Args),
     CurrHead = get_current_head(Args),
     case get_dangling_migrations(Args) of
         [] ->
-            case RevList of
+            case find_pending_migrations(Args) of
                 [] ->
-                    print("No pending revision found for input ~p ~n", [Args]),
-                    {ok, CurrHead, RevList};
-                _ ->
+                    print("No migrations to apply!"),
+                    {ok, CurrHead, []};
+                RevList ->
                     NewHead =
                         lists:foldl(
                             fun(RevId, _Acc) ->
                                 ModuleName = list_to_atom(atom_to_list(RevId) ++ "_erl_migration"),
-                                print("ModuleName = ~p, RevId = ~p~n", [ModuleName, RevId]),
-                                print("Running upgrade ~p -> ~p ~n", [
-                                    ModuleName:get_prev_rev(), ModuleName:get_current_rev()
-                                ]),
+                                print("Applying migration: ~p~n", [RevId]),
                                 ModuleName:up(),
                                 update_history(RevId, Args, up),
                                 RevId
@@ -258,11 +243,11 @@ apply_upgrades(Args) ->
                             RevList
                         ),
                     update_head(NewHead, Args),
-                    print("All upgrades successfully applied for input ~p~n", [Args]),
+                    print("~p.~p: All pending migration successfully applied.", [Schema, Instance]),
                     {ok, NewHead, RevList}
             end;
         DanglingMigrations ->
-            print("Error!!! Dangling migrations found: ~p", [DanglingMigrations]),
+            print("Error!!! ~p.~p: Dangling migrations found: ~p", [Schema, Instance, DanglingMigrations]),
             exit("Dangling migrations found")
     end.
 
@@ -271,11 +256,12 @@ apply_upgrades(Args) ->
     DownNum :: integer()
 ) ->
     Output :: {ok, NewHead :: atom(), RevList :: list()}.
-apply_downgrades(Args, DownNum) ->
+apply_downgrades(#{schema_name := Schema, schema_instance := Instance} = Args, DownNum) ->
+    print("~p.~p: Applying down migrations.........", [Schema, Instance]),
     CurrHead = get_applied_head(Args),
     {NewHead, DownRevList} = downgrade(CurrHead, Args, DownNum, []),
     update_head(NewHead, Args),
-    print("all downgrades successfully applied.~n", []),
+    print("All downgrades successfully applied"),
     {ok, NewHead, DownRevList}.
 
 -spec downgrade(
@@ -425,13 +411,16 @@ get_migration_beam_filepath(Args) ->
     ok = filelib:ensure_dir(Path),
     Path.
 
+print(Statement) ->
+    print(Statement, []).
+
 print(Statement, Arg) ->
     case application:get_env(erl_migrate, verbose, true) of
         true -> io:format(Statement ++ "~n", Arg);
         false -> ok
     end.
 
-detect_revision_sequence_conflicts(Args) ->
+detect_revision_sequence_conflicts(#{schema_name := Schema, schema_instance := Instance} = Args) ->
     SchemaName = maps:get(schema_name, Args, undefined),
     Tree = get_revision_tree(Args),
     Modulelist = filelib:wildcard(get_migration_beam_filepath(Args) ++ "*_erl_migration.beam"),
@@ -451,7 +440,7 @@ detect_revision_sequence_conflicts(Args) ->
                     ),
                 case length(Res) > 1 of
                     true ->
-                        print("Conflict detected at revision id ~p~n", [RevId]),
+                        print("~p.~p: Conflict detected at revision id ~p~n", [Schema, Instance, RevId]),
                         true;
                     false ->
                         false
