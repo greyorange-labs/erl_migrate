@@ -74,9 +74,9 @@ get_base_revision(Args) ->
     Res =
         lists:filter(
             fun(Filename) ->
-                Modulename = list_to_atom(filename:basename(Filename, ".beam")),
-                case is_erl_migration_module(Modulename, SchemaName) of
-                    true -> Modulename:get_prev_rev() =:= none;
+                ModuleName = list_to_atom(filename:basename(Filename, ".beam")),
+                case is_erl_migration_module(ModuleName, SchemaName) of
+                    true -> ModuleName:get_prev_rev() =:= none;
                     false -> false
                 end
             end,
@@ -108,9 +108,9 @@ get_next_revision(RevId, Args) ->
     Res =
         lists:filter(
             fun(Filename) ->
-                Modulename = list_to_atom(filename:basename(Filename, ".beam")),
-                case is_erl_migration_module(Modulename, SchemaName) of
-                    true -> Modulename:get_prev_rev() =:= RevId;
+                ModuleName = list_to_atom(filename:basename(Filename, ".beam")),
+                case is_erl_migration_module(ModuleName, SchemaName) of
+                    true -> ModuleName:get_prev_rev() =:= RevId;
                     false -> false
                 end
             end,
@@ -346,7 +346,7 @@ update_history(RevId, Args, Operation) ->
                     migration_name = RevId,
                     id = Id,
                     operation = Operation,
-                    timestamp = erl_migrate:get_current_time()
+                    timestamp = get_current_time()
                 },
             mnesia:write(?TABLE_2, NewRecord, write)
         end
@@ -357,11 +357,11 @@ update_history(RevId, Args, Operation) ->
 %%
 
 -spec is_erl_migration_module(
-    Modulename :: atom(),
+    ModuleName :: atom(),
     SchemaName :: any()
 ) -> boolean().
-is_erl_migration_module(Modulename, SchemaName) ->
-    case catch Modulename:module_info(attributes) of
+is_erl_migration_module(ModuleName, SchemaName) ->
+    case catch ModuleName:module_info(attributes) of
         {'EXIT', {undef, _}} ->
             false;
         Attributes ->
@@ -430,9 +430,9 @@ detect_revision_sequence_conflicts(#{schema_name := Schema} = Args) ->
                 Res =
                     lists:filter(
                         fun(Filename) ->
-                            Modulename = list_to_atom(filename:basename(Filename, ".beam")),
-                            case is_erl_migration_module(Modulename, SchemaName) of
-                                true -> Modulename:get_prev_rev() =:= RevId;
+                            ModuleName = list_to_atom(filename:basename(Filename, ".beam")),
+                            case is_erl_migration_module(ModuleName, SchemaName) of
+                                true -> ModuleName:get_prev_rev() =:= RevId;
                                 false -> false
                             end
                         end,
@@ -491,6 +491,18 @@ print_row(RowData) ->
     lists:foreach(fun(V) -> io:format("~-*s | ", [30, V]) end, RowData),
     io:format("~n").
 
-get_dangling_migrations(_Args) ->
-    %% TODO: implement this function
-    [].
+get_dangling_migrations(#{migration_beam_files_dir_path := BeamPath, schema_name := SchemaName} = Args) ->
+    MigTree = get_revision_tree(Args),
+    AllMigFiles = filelib:wildcard(BeamPath ++ "*_erl_migration.beam"),
+    SchemaMigModules =
+        lists:filtermap(
+            fun(MigFile) ->
+                ModuleName = list_to_atom(filename:basename(MigFile, ".beam")),
+                case is_erl_migration_module(ModuleName, SchemaName) of
+                    true -> {true, list_to_atom(filename:basename(MigFile, "_erl_migration.beam"))};
+                    false -> false
+                end
+            end,
+            AllMigFiles
+        ),
+    SchemaMigModules -- MigTree.
