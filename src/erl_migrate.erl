@@ -247,22 +247,21 @@ apply_upgrades(#{schema_name := Schema, schema_instance := Instance} = Args) ->
                     {ok, NewHead, RevList}
             end;
         DanglingMigrations ->
-            print("Error!!! ~p.~p: Dangling migrations found: ~p", [Schema, Instance, DanglingMigrations]),
+            print("Error!!! ~p.~p: Dangling migrations found: ~p", [
+                Schema, Instance, DanglingMigrations
+            ]),
             exit("Dangling migrations found")
     end.
 
--spec apply_downgrades(
-    Args :: maps:map(),
-    DownNum :: integer()
-) ->
-    Output :: {ok, NewHead :: atom(), RevList :: list()}.
+-spec apply_downgrades(Args :: maps:map(), DownNum :: integer()) -> ok.
 apply_downgrades(#{schema_name := Schema, schema_instance := Instance} = Args, DownNum) ->
     print("~p.~p: Applying down migrations.........", [Schema, Instance]),
     CurrHead = get_applied_head(Args),
-    {NewHead, DownRevList} = downgrade(CurrHead, Args, DownNum, []),
+    {NewHead, _DownRevList} = downgrade(CurrHead, Args, DownNum, []),
     update_head(NewHead, Args),
     print("All downgrades successfully applied"),
-    {ok, NewHead, DownRevList}.
+    print("New head is ~p", [NewHead]),
+    ok.
 
 -spec downgrade(
     CurrHead :: none | atom(),
@@ -396,18 +395,8 @@ get_migration_source_filepath(Args) ->
             SrcFilesPath
     end.
 
--spec get_migration_beam_filepath(
-    Args :: maps:map()
-) -> Path :: string().
-get_migration_beam_filepath(Args) ->
-    Path =
-        case maps:get(migration_beam_files_dir_path, Args, undefined) of
-            undefined ->
-                {ok, AppName} = application:get_application(),
-                code:lib_dir(AppName, ebin) ++ "/";
-            InputPath ->
-                InputPath
-        end,
+-spec get_migration_beam_filepath(Args :: maps:map()) -> Path :: string().
+get_migration_beam_filepath(#{migration_beam_files_dir_path := Path}) ->
     ok = filelib:ensure_dir(Path),
     Path.
 
@@ -491,7 +480,9 @@ print_row(RowData) ->
     lists:foreach(fun(V) -> io:format("~-*s | ", [30, V]) end, RowData),
     io:format("~n").
 
-get_dangling_migrations(#{migration_beam_files_dir_path := BeamPath, schema_name := SchemaName} = Args) ->
+get_dangling_migrations(
+    #{migration_beam_files_dir_path := BeamPath, schema_name := SchemaName} = Args
+) ->
     MigTree = get_revision_tree(Args),
     AllMigFiles = filelib:wildcard(BeamPath ++ "*_erl_migration.beam"),
     SchemaMigModules =

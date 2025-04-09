@@ -8,3 +8,5 @@ deps
 erl_migrate.d
 mnesia_migrate.d
 xrefr
+_build/
+rebar.lock
