@@ -10,6 +10,11 @@
 -behaviour(erl_migration).
 -schema_name({{schema_name}}).
 -export([up/0, down/0, get_current_rev/0, get_prev_rev/0, init/1]).
+-elvis([
+    {ud_elvis, restrict_db_records_deserialization, #{ignore => [{modulename}]}},
+    {ud_elvis, restrict_db_records_usage, #{ignore => [{modulename}]}},
+    {elvis_style, no_call, #{ignore => [{modulename}]}},
+]).
 
 init([]) -> ok.
 
