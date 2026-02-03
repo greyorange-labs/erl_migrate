@@ -61,7 +61,7 @@ init_db_tables() ->
     ok = mnesia:wait_for_tables([?TABLE_1, ?TABLE_2], TimeOut).
 
 %%
-%%Functions related to migration info
+%% Functions related to migration info
 %%
 
 -spec get_base_revision(
@@ -211,7 +211,8 @@ create_migration_file(Args) ->
     SrcFilesPath = get_migration_source_filepath(Args),
     FilePath = SrcFilesPath ++ Filename ++ ".erl",
     ok = file:write_file(FilePath, Data),
-    io:format("Migration file created at ~ts~n", [FilePath]).
+    io:format("Migration file created at ~ts~n", [FilePath]),
+    FilePath.
 
 %%
 %% Functions related to applying migrations
@@ -257,11 +258,11 @@ apply_upgrades(#{schema_name := Schema, schema_instance := Instance} = Args) ->
 apply_downgrades(#{schema_name := Schema, schema_instance := Instance} = Args, DownNum) ->
     print("~p.~p: Applying down migrations.........", [Schema, Instance]),
     CurrHead = get_applied_head(Args),
-    {NewHead, _DownRevList} = downgrade(CurrHead, Args, DownNum, []),
+    {NewHead, DownRevList} = downgrade(CurrHead, Args, DownNum, []),
     update_head(NewHead, Args),
     print("All downgrades successfully applied"),
     print("New head is ~p", [NewHead]),
-    ok.
+    {ok, NewHead, DownRevList}.
 
 -spec downgrade(
     CurrHead :: none | atom(),
@@ -352,7 +353,7 @@ update_history(RevId, Args, Operation) ->
     ).
 
 %%
-%% helper functions
+%% Helper functions
 %%
 
 -spec is_erl_migration_module(

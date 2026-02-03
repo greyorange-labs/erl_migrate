@@ -40,7 +40,11 @@ migration_test_() ->
         setup,
         fun() ->
             start_mnesia(),
-            meck:expect(erl_migrate, get_current_time,
+            %% NOTE:
+            %% We mock calendar:local_time/0 instead of erl_migrate:get_current_time/0
+            %% because local self-calls may be inlined by the compiler and bypass meck.
+            meck:new(calendar, [unstick, passthrough]),
+            meck:expect(calendar, local_time,
                 fun() ->
                     {{1994,5,10},{11,11,11}}
                 end
@@ -69,10 +73,10 @@ migration_test_() ->
                     },
                     {"Test apply upgrades / downgrades",
                         fun() ->
-                            Args1 = Args = ?ARGS#{schema_instance => schema_instance_1, schema_name => schema_name_1},
-                            Args2 = Args = ?ARGS#{schema_instance => schema_instance_2, schema_name => schema_name_1},
-                            Args3 = Args = ?ARGS#{schema_instance => schema_instance_1, schema_name => schema_name_2},
-                            Args4 = Args = ?ARGS#{schema_instance => schema_instance_2, schema_name => schema_name_2},
+                            Args1 = ?ARGS#{schema_instance => schema_instance_1, schema_name => schema_name_1},
+                            Args2 = ?ARGS#{schema_instance => schema_instance_2, schema_name => schema_name_1},
+                            Args3 = ?ARGS#{schema_instance => schema_instance_1, schema_name => schema_name_2},
+                            Args4 = ?ARGS#{schema_instance => schema_instance_2, schema_name => schema_name_2},
                             %% Test1: First time
                             ?assertEqual({ok, test2, [test1, test2]}, erl_migrate:apply_upgrades(Args1)),
                             %% Test2: When all migrations are already applied
