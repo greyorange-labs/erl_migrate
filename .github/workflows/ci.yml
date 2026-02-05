@@ -14,8 +14,5 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v6
-    - name: Build
-      run: rebar3 compile
     - name: Run tests
-      run: |
-           make eunit
+      run: make eunit

@@ -199,13 +199,19 @@ create_migration_file(Args) ->
     OldRevisionId = get_current_head(Args),
     SchemaName = maps:get(schema_name, Args),
     Filename = NewRevisionId ++ "_erl_migration",
+    {{Year, _, _}, _} = get_current_time(),
+    Author = string:trim(os:cmd("git config --get user.name")),
+    Email = string:trim(os:cmd("git config --get user.email")),
     {ok, Data} = migration_template:render(
         [
             {new_rev_id, NewRevisionId},
             {old_rev_id, OldRevisionId},
             {modulename, Filename},
             {tabtomig, []},
-            {schema_name, SchemaName}
+            {schema_name, SchemaName},
+            {year, Year},
+            {author, Author},
+            {email, Email}
         ]
     ),
     SrcFilesPath = get_migration_source_filepath(Args),
@@ -254,7 +260,7 @@ apply_upgrades(#{schema_name := Schema, schema_instance := Instance} = Args) ->
             exit("Dangling migrations found")
     end.
 
--spec apply_downgrades(Args :: maps:map(), DownNum :: integer()) -> ok.
+-spec apply_downgrades(Args :: maps:map(), DownNum :: integer()) -> {ok, NewHead :: atom(), RevList :: list()}.
 apply_downgrades(#{schema_name := Schema, schema_instance := Instance} = Args, DownNum) ->
     print("~p.~p: Applying down migrations.........", [Schema, Instance]),
     CurrHead = get_applied_head(Args),
