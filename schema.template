@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% @copyright (C) {{year}}, GreyOrange India (P) Ltd.
 %%%
-%%% @author {{author}} {{email}}
+%%% @author {{name}} {{email}}
 %%%-------------------------------------------------------------------
 -module({{modulename}}).
 -moduledoc """

@@ -33,17 +33,28 @@ create_migration_file_test_() ->
                 ?assertCmd("rm " ++ Filename)
             end
         },
-	    {"check copyright year, author, email",
+	    {"check copyright year, name, email",
             fun () ->
                 {ok, Dir} = file:get_cwd(),
                 code:add_path(Dir),
                 Filename = erl_migrate:create_migration_file(?ARGS),
                 ?assertEqual(true, filelib:is_file(Filename)),
                 {ok, Bin} = file:read_file(Filename),
-                %io:format(user, "data: ~p~n", [Bin]),
                 {{Year, _, _}, _} = calendar:local_time(),
-                Author = list_to_binary(string:trim(os:cmd("git config --get user.name"))),
-                Email = list_to_binary(string:trim(os:cmd("git config --get user.email"))),
+                Author =
+                    case list_to_binary(string:trim(os:cmd("git config --get user.name"))) of
+                        <<>> ->
+                            <<"[ADD NAME HERE]">>;
+                        <<_, _/binary>> = A ->
+                            A
+                    end,
+                Email =
+                    case list_to_binary(string:trim(os:cmd("git config --get user.email"))) of
+                        <<>> ->
+                            <<"[ADD EMAIL HERE]">>;
+                        <<_, _/binary>> = E ->
+                            E
+                    end,
                 ?assertNotEqual(nomatch, binary:match(Bin, <<"@copyright (C) ", (integer_to_binary(Year))/binary>>)),
                 ?assertNotEqual(nomatch, binary:match(Bin, <<"@author ", Author/binary, " ", Email/binary>>)),
                 ?assertCmd("rm " ++ Filename)
@@ -62,7 +73,7 @@ migration_test_() ->
             meck:new(calendar, [unstick, passthrough]),
             meck:expect(calendar, local_time,
                 fun() ->
-                    {{1994,5,10},{11,11,11}}
+                    {{1994, 5, 10}, {11, 11, 11}}
                 end
             )
         end,
