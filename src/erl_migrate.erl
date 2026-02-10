@@ -214,6 +214,7 @@ create_migration_file(Args) ->
     ok = file:write_file(FilePath, Data),
     ok = io:format("Migration file created at ~ts~n", [FilePath]),
     ok = maybe_print_warning(CopyrightErrors, FilePath),
+    ok = print_reminder(FilePath),
     FilePath.
 
 %%
@@ -520,3 +521,17 @@ maybe_print_warning([], _) ->
 maybe_print_warning([_ | _] = Errs, FilePath) ->
     ErrsStr = string:join([atom_to_list(E) || E <- Errs], ", "),
     io:format("\e[31mThe ~p is not configured in git. Please update ~p manually.\e[0m~n", [ErrsStr, FilePath]).
+
+print_reminder(FilePath) ->
+    Sections = ["Migration", "Description", "Rationale", "Changes", "Data Impact",
+        "Rollback Considerations", "Performance Impact", "Dependencies", "Testing Notes"],
+    QuotedSections =
+        lists:map(fun(S) -> "\"" ++ S ++ "\"" end, Sections),
+    SectionsStr = string:join(QuotedSections, ", "),
+    io:format(
+        "\n\e[33m[REMINDER]\e[0m Please update the template at the following path:\n"
+        "\e[33m           → ~s\e[0m\n"
+        "\e[33m[REMINDER]\e[0m Review and update the following sections:\n"
+        "\e[33m           → ~s\e[0m\n\n",
+        [FilePath, SectionsStr]
+    ).
