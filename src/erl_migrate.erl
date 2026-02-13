@@ -61,7 +61,7 @@ init_db_tables() ->
     ok = mnesia:wait_for_tables([?TABLE_1, ?TABLE_2], TimeOut).
 
 %%
-%%Functions related to migration info
+%% Functions related to migration info
 %%
 
 -spec get_base_revision(
@@ -199,19 +199,23 @@ create_migration_file(Args) ->
     OldRevisionId = get_current_head(Args),
     SchemaName = maps:get(schema_name, Args),
     Filename = NewRevisionId ++ "_erl_migration",
+    {Copyright, CopyrightErrors} = prepare_copyright(),
     {ok, Data} = migration_template:render(
         [
             {new_rev_id, NewRevisionId},
             {old_rev_id, OldRevisionId},
             {modulename, Filename},
             {tabtomig, []},
-            {schema_name, SchemaName}
+            {schema_name, SchemaName} | Copyright
         ]
     ),
     SrcFilesPath = get_migration_source_filepath(Args),
     FilePath = SrcFilesPath ++ Filename ++ ".erl",
     ok = file:write_file(FilePath, Data),
-    io:format("Migration file created at ~ts~n", [FilePath]).
+    ok = io:format("Migration file created at ~ts~n", [FilePath]),
+    ok = maybe_print_warning(CopyrightErrors, FilePath),
+    ok = print_reminder(FilePath),
+    FilePath.
 
 %%
 %% Functions related to applying migrations
@@ -253,15 +257,15 @@ apply_upgrades(#{schema_name := Schema, schema_instance := Instance} = Args) ->
             exit("Dangling migrations found")
     end.
 
--spec apply_downgrades(Args :: maps:map(), DownNum :: integer()) -> ok.
+-spec apply_downgrades(Args :: maps:map(), DownNum :: integer()) -> {ok, NewHead :: atom(), RevList :: list()}.
 apply_downgrades(#{schema_name := Schema, schema_instance := Instance} = Args, DownNum) ->
     print("~p.~p: Applying down migrations.........", [Schema, Instance]),
     CurrHead = get_applied_head(Args),
-    {NewHead, _DownRevList} = downgrade(CurrHead, Args, DownNum, []),
+    {NewHead, DownRevList} = downgrade(CurrHead, Args, DownNum, []),
     update_head(NewHead, Args),
     print("All downgrades successfully applied"),
     print("New head is ~p", [NewHead]),
-    ok.
+    {ok, NewHead, DownRevList}.
 
 -spec downgrade(
     CurrHead :: none | atom(),
@@ -352,7 +356,7 @@ update_history(RevId, Args, Operation) ->
     ).
 
 %%
-%% helper functions
+%% Helper functions
 %%
 
 -spec is_erl_migration_module(
@@ -497,3 +501,37 @@ get_dangling_migrations(
             AllMigFiles
         ),
     SchemaMigModules -- MigTree.
+
+prepare_copyright() ->
+    {{Year, _, _}, _} = get_current_time(),
+    Author = string:trim(os:cmd("git config --get user.name")),
+    Email = string:trim(os:cmd("git config --get user.email")),
+    Copyright = [{year, Year}, {name, Author}, {email, Email}],
+    prepare_copyright(Copyright, [], []).
+
+prepare_copyright([], Acc, Errs) ->
+    {Acc, Errs};
+prepare_copyright([{Key, []} | T], Acc, Errs) when Key == name; Key == email ->
+    prepare_copyright(T, [{Key, "[ADD " ++ string:uppercase(atom_to_list(Key)) ++ " HERE]"} | Acc], [Key | Errs]);
+prepare_copyright([H | T], Acc, Errs) ->
+    prepare_copyright(T, [H | Acc], Errs).
+
+maybe_print_warning([], _) ->
+    ok;
+maybe_print_warning([_ | _] = Errs, FilePath) ->
+    ErrsStr = string:join([atom_to_list(E) || E <- Errs], ", "),
+    io:format("\e[31mThe ~p is not configured in git. Please update ~p manually.\e[0m~n", [ErrsStr, FilePath]).
+
+print_reminder(FilePath) ->
+    Sections = ["Migration", "Description", "Rationale", "Changes", "Data Impact",
+        "Rollback Considerations", "Performance Impact", "Dependencies", "Testing Notes"],
+    QuotedSections =
+        lists:map(fun(S) -> "\"" ++ S ++ "\"" end, Sections),
+    SectionsStr = string:join(QuotedSections, ", "),
+    io:format(
+        "\n\e[33m[REMINDER]\e[0m Please update the template at the following path:\n"
+        "\e[33m           → ~s\e[0m\n"
+        "\e[33m[REMINDER]\e[0m Review and update the following sections:\n"
+        "\e[33m           → ~s\e[0m\n\n",
+        [FilePath, SectionsStr]
+    ).

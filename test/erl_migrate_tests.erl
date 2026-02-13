@@ -32,6 +32,33 @@ create_migration_file_test_() ->
                 Filename = erl_migrate:create_migration_file(?ARGS),
                 ?assertCmd("rm " ++ Filename)
             end
+        },
+	    {"check copyright year, name, email",
+            fun () ->
+                {ok, Dir} = file:get_cwd(),
+                code:add_path(Dir),
+                Filename = erl_migrate:create_migration_file(?ARGS),
+                ?assertEqual(true, filelib:is_file(Filename)),
+                {ok, Bin} = file:read_file(Filename),
+                {{Year, _, _}, _} = calendar:local_time(),
+                Author =
+                    case list_to_binary(string:trim(os:cmd("git config --get user.name"))) of
+                        <<>> ->
+                            <<"[ADD NAME HERE]">>;
+                        <<_, _/binary>> = A ->
+                            A
+                    end,
+                Email =
+                    case list_to_binary(string:trim(os:cmd("git config --get user.email"))) of
+                        <<>> ->
+                            <<"[ADD EMAIL HERE]">>;
+                        <<_, _/binary>> = E ->
+                            E
+                    end,
+                ?assertNotEqual(nomatch, binary:match(Bin, <<"@copyright (C) ", (integer_to_binary(Year))/binary>>)),
+                ?assertNotEqual(nomatch, binary:match(Bin, <<"@author ", Author/binary, " ", Email/binary>>)),
+                ?assertCmd("rm " ++ Filename)
+            end
         }
 	].
 
@@ -40,9 +67,13 @@ migration_test_() ->
         setup,
         fun() ->
             start_mnesia(),
-            meck:expect(erl_migrate, get_current_time,
+            %% NOTE:
+            %% We mock calendar:local_time/0 instead of erl_migrate:get_current_time/0
+            %% because local self-calls may be inlined by the compiler and bypass meck.
+            meck:new(calendar, [unstick, passthrough]),
+            meck:expect(calendar, local_time,
                 fun() ->
-                    {{1994,5,10},{11,11,11}}
+                    {{1994, 5, 10}, {11, 11, 11}}
                 end
             )
         end,
@@ -69,10 +100,10 @@ migration_test_() ->
                     },
                     {"Test apply upgrades / downgrades",
                         fun() ->
-                            Args1 = Args = ?ARGS#{schema_instance => schema_instance_1, schema_name => schema_name_1},
-                            Args2 = Args = ?ARGS#{schema_instance => schema_instance_2, schema_name => schema_name_1},
-                            Args3 = Args = ?ARGS#{schema_instance => schema_instance_1, schema_name => schema_name_2},
-                            Args4 = Args = ?ARGS#{schema_instance => schema_instance_2, schema_name => schema_name_2},
+                            Args1 = ?ARGS#{schema_instance => schema_instance_1, schema_name => schema_name_1},
+                            Args2 = ?ARGS#{schema_instance => schema_instance_2, schema_name => schema_name_1},
+                            Args3 = ?ARGS#{schema_instance => schema_instance_1, schema_name => schema_name_2},
+                            Args4 = ?ARGS#{schema_instance => schema_instance_2, schema_name => schema_name_2},
                             %% Test1: First time
                             ?assertEqual({ok, test2, [test1, test2]}, erl_migrate:apply_upgrades(Args1)),
                             %% Test2: When all migrations are already applied
