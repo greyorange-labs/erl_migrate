@@ -206,8 +206,8 @@ create_migration_file(Args) ->
             {old_rev_id, OldRevisionId},
             {modulename, Filename},
             {tabtomig, []},
-            {schema_name, SchemaName}
-        ] ++ Copyright
+            {schema_name, SchemaName} | Copyright
+        ]
     ),
     SrcFilesPath = get_migration_source_filepath(Args),
     FilePath = SrcFilesPath ++ Filename ++ ".erl",
