@@ -2,10 +2,9 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
--record(erl_migration_runs, {
+-record(db_migration_runs, {
     id,
-    schema_instance,
-    schema_name,
+    tag,
     migration_name,
     direction,
     status,
@@ -239,17 +238,17 @@ migration_test_() ->
                             Args5 = ?ARGS#{schema_instance => schema_instance_3, schema_name => schema_name_3},
                             ?assertEqual({ok, test6, [test5, test6]}, erl_migrate:apply_upgrades(Args5)),
                             Last = erl_migrate:get_last_migration_run(Args5),
-                            ?assertEqual(test6, Last#erl_migration_runs.migration_name),
-                            ?assertEqual(ok, Last#erl_migration_runs.status),
-                            ?assertEqual(up, Last#erl_migration_runs.direction),
+                            ?assertEqual(test6, Last#db_migration_runs.migration_name),
+                            ?assertEqual(ok, Last#db_migration_runs.status),
+                            ?assertEqual(up, Last#db_migration_runs.direction),
                             Runs = erl_migrate:get_run_log(Args5),
                             %% One row per revision attempt (running row is updated in place)
                             ?assertEqual(2, length(Runs)),
                             ?assertEqual(
-                                2, length([R || R <- Runs, R#erl_migration_runs.status =:= ok])
+                                2, length([R || R <- Runs, R#db_migration_runs.status =:= ok])
                             ),
                             ?assertEqual(
-                                0, length([R || R <- Runs, R#erl_migration_runs.status =:= running])
+                                0, length([R || R <- Runs, R#db_migration_runs.status =:= running])
                             )
                         end
                     },
@@ -263,10 +262,10 @@ migration_test_() ->
                             ?assertEqual([test6], erl_migrate:find_pending_migrations(Args5)),
                             %% Last run row is failed test6
                             Last = erl_migrate:get_last_migration_run(Args5),
-                            ?assertEqual(test6, Last#erl_migration_runs.migration_name),
-                            ?assertEqual(failed, Last#erl_migration_runs.status),
-                            ?assertEqual({error, test6_fail}, Last#erl_migration_runs.error_reason),
-                            ?assertNotEqual(undefined, Last#erl_migration_runs.stacktrace),
+                            ?assertEqual(test6, Last#db_migration_runs.migration_name),
+                            ?assertEqual(failed, Last#db_migration_runs.status),
+                            ?assertEqual({error, test6_fail}, Last#db_migration_runs.error_reason),
+                            ?assertNotEqual(undefined, Last#db_migration_runs.stacktrace),
                             %% History has exactly one row: test5 (test6 failed before history write)
                             ?assertEqual(
                                 1,
@@ -353,8 +352,8 @@ migration_test_() ->
                             Args5 = ?ARGS#{schema_instance => schema_instance_3, schema_name => schema_name_3},
                             ?assertEqual({ok, test5, [test6]}, erl_migrate:apply_downgrades(Args5, 1)),
                             Last = erl_migrate:get_last_migration_run(Args5),
-                            ?assertEqual(down, Last#erl_migration_runs.direction),
-                            ?assertEqual(ok, Last#erl_migration_runs.status)
+                            ?assertEqual(down, Last#db_migration_runs.direction),
+                            ?assertEqual(ok, Last#db_migration_runs.status)
                         end
                     }
                 ]

@@ -4,7 +4,7 @@
 
 -define(TABLE_1, erl_migrations).
 -define(TABLE_2, erl_migrations_history).
--define(TABLE_3, erl_migration_runs).
+-define(TABLE_3, db_migration_runs).
 
 -record(erl_migrations, {
     id :: {SchemaInstance :: any(), SchemaName :: any()},
@@ -19,15 +19,9 @@
     timestamp :: calendar:local_time()
 }).
 
--record(erl_migration_runs, {
-    id :: {
-        SchemaInstance :: any(),
-        SchemaName :: any(),
-        MigrationName :: atom(),
-        AttemptTs :: integer()
-    },
-    schema_instance :: any(),
-    schema_name :: any(),
+-record(db_migration_runs, {
+    id :: {Tag :: any(), MigrationName :: atom(), AttemptTs :: integer()},
+    tag :: any(),
     migration_name :: atom(),
     direction :: up | down,
     status :: running | ok | failed,
@@ -84,7 +78,7 @@ init_db_tables() ->
             Attr3 =
                 [
                     {disc_copies, [node()]},
-                    {attributes, record_info(fields, erl_migration_runs)}
+                    {attributes, record_info(fields, db_migration_runs)}
                 ],
             case mnesia:create_table(?TABLE_3, Attr3) of
                 {atomic, ok} ->
@@ -392,13 +386,11 @@ run_revision(Direction, RevId, ModuleName, Args) ->
     StackTrace :: binary() | undefined
 ) -> ok.
 write_run_log(RevId, Args, Direction, Status, AttemptTs, StartedAt, FinishedAt, ErrorReason, StackTrace) ->
-    SchemaName = maps:get(schema_name, Args),
-    SchemaInstance = maps:get(schema_instance, Args),
-    Id = {SchemaInstance, SchemaName, RevId, AttemptTs},
-    Rec = #erl_migration_runs{
+    Tag = run_tag(Args),
+    Id = {Tag, RevId, AttemptTs},
+    Rec = #db_migration_runs{
         id = Id,
-        schema_instance = SchemaInstance,
-        schema_name = SchemaName,
+        tag = Tag,
         migration_name = RevId,
         direction = Direction,
         status = Status,
@@ -410,6 +402,10 @@ write_run_log(RevId, Args, Direction, Status, AttemptTs, StartedAt, FinishedAt, 
     },
     {atomic, ok} = mnesia:transaction(fun() -> mnesia:write(?TABLE_3, Rec, write) end),
     ok.
+
+-spec run_tag(Args :: maps:map()) -> any().
+run_tag(Args) when is_map(Args) ->
+    maps:get(run_tag, Args, maps:get(schema_name, Args, undefined)).
 
 -spec notify_observer(Callback :: atom(), Args :: maps:map(), Payload :: list()) -> ok.
 notify_observer(Callback, Args, Payload) ->
@@ -441,9 +437,9 @@ format_stacktrace(Stack) ->
 
 -spec get_last_migration_run(
     Args :: maps:map()
-) -> #erl_migration_runs{} | none.
-get_last_migration_run(#{schema_name := Schema, schema_instance := Instance}) ->
-    Pattern = #erl_migration_runs{id = {Instance, Schema, '_', '_'}, _ = '_'},
+) -> #db_migration_runs{} | none.
+get_last_migration_run(Args) when is_map(Args) ->
+    Pattern = #db_migration_runs{tag = run_tag(Args), _ = '_'},
     Rows = mnesia:dirty_match_object(?TABLE_3, Pattern),
     case Rows of
         [] ->
@@ -463,12 +459,12 @@ get_last_migration_run(#{schema_name := Schema, schema_instance := Instance}) ->
 
 -spec get_run_log(
     Args :: maps:map()
-) -> list(#erl_migration_runs{}).
-get_run_log(#{schema_name := Schema, schema_instance := Instance}) ->
-    Pattern = #erl_migration_runs{id = {Instance, Schema, '_', '_'}, _ = '_'},
+) -> list(#db_migration_runs{}).
+get_run_log(Args) when is_map(Args) ->
+    Pattern = #db_migration_runs{tag = run_tag(Args), _ = '_'},
     mnesia:dirty_match_object(?TABLE_3, Pattern).
 
-attempt_ts(#erl_migration_runs{id = {_Instance, _Schema, _RevId, AttemptTs}}) ->
+attempt_ts(#db_migration_runs{id = {_Tag, _RevId, AttemptTs}}) ->
     AttemptTs.
 
 -spec append_revision_tree(
