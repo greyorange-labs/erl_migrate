@@ -2,6 +2,20 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
+-record(erl_migration_runs, {
+    id,
+    schema_instance,
+    schema_name,
+    migration_name,
+    direction,
+    status,
+    started_at,
+    finished_at,
+    error_reason,
+    stacktrace,
+    node
+}).
+
 -define(ARGS,
     #{
         schema_name => schema_name_1,
@@ -218,6 +232,129 @@ migration_test_() ->
                                 ),
                             ?assertEqual(SchemaMigration, lists:usort(Result1)),
                             ?assertEqual(MigrationHistory, lists:usort(Result2))
+                        end
+                    },
+                    {"Test migration run log lifecycle (ok)",
+                        fun() ->
+                            Args5 = ?ARGS#{schema_instance => schema_instance_3, schema_name => schema_name_3},
+                            ?assertEqual({ok, test6, [test5, test6]}, erl_migrate:apply_upgrades(Args5)),
+                            Last = erl_migrate:get_last_migration_run(Args5),
+                            ?assertEqual(test6, Last#erl_migration_runs.migration_name),
+                            ?assertEqual(ok, Last#erl_migration_runs.status),
+                            ?assertEqual(up, Last#erl_migration_runs.direction),
+                            Runs = erl_migrate:get_run_log(Args5),
+                            %% One row per revision attempt (running row is updated in place)
+                            ?assertEqual(2, length(Runs)),
+                            ?assertEqual(
+                                2, length([R || R <- Runs, R#erl_migration_runs.status =:= ok])
+                            ),
+                            ?assertEqual(
+                                0, length([R || R <- Runs, R#erl_migration_runs.status =:= running])
+                            )
+                        end
+                    },
+                    {"Test run log on failure, per-revision head, no re-run of applied revisions",
+                        fun() ->
+                            Args5 = ?ARGS#{schema_instance => schema_instance_1, schema_name => schema_name_3},
+                            application:set_env(erl_migrate, fail_test6, true),
+                            ?assertError(test6_fail, erl_migrate:apply_upgrades(Args5)),
+                            %% Per-revision head: only test6 remains pending (test5 applied)
+                            ?assertEqual(test5, erl_migrate:get_applied_head(Args5)),
+                            ?assertEqual([test6], erl_migrate:find_pending_migrations(Args5)),
+                            %% Last run row is failed test6
+                            Last = erl_migrate:get_last_migration_run(Args5),
+                            ?assertEqual(test6, Last#erl_migration_runs.migration_name),
+                            ?assertEqual(failed, Last#erl_migration_runs.status),
+                            ?assertEqual({error, test6_fail}, Last#erl_migration_runs.error_reason),
+                            ?assertNotEqual(undefined, Last#erl_migration_runs.stacktrace),
+                            %% History has exactly one row: test5 (test6 failed before history write)
+                            ?assertEqual(
+                                1,
+                                length(
+                                    mnesia:dirty_match_object(erl_migrations_history,
+                                        {erl_migrations_history, '_', '_',
+                                            {schema_instance_1, schema_name_3}, '_', '_'})
+                                )
+                            ),
+                            %% Retry: failing revision is re-attempted, applied revision is NOT re-run
+                            HistoryCountBeforeRetry =
+                                length(
+                                    mnesia:dirty_match_object(erl_migrations_history,
+                                        {erl_migrations_history, '_', '_',
+                                            {schema_instance_1, schema_name_3}, '_', '_'})
+                                ),
+                            ?assertError(test6_fail, erl_migrate:apply_upgrades(Args5)),
+                            ?assertEqual(test5, erl_migrate:get_applied_head(Args5)),
+                            ?assertEqual(
+                                HistoryCountBeforeRetry,
+                                length(
+                                    mnesia:dirty_match_object(erl_migrations_history,
+                                        {erl_migrations_history, '_', '_',
+                                            {schema_instance_1, schema_name_3}, '_', '_'})
+                                )
+                            ),
+                            %% Fix the failure and continue from exactly test6
+                            application:set_env(erl_migrate, fail_test6, false),
+                            ?assertEqual({ok, test6, [test6]}, erl_migrate:apply_upgrades(Args5)),
+                            ?assertEqual(test6, erl_migrate:get_applied_head(Args5)),
+                            application:unset_env(erl_migrate, fail_test6)
+                        end
+                    },
+                    {"Test observer callbacks",
+                        fun() ->
+                            dummy_observer:init(),
+                            ArgsO = ?ARGS#{
+                                schema_instance => schema_instance_2,
+                                schema_name => schema_name_3,
+                                run_log_observer => dummy_observer
+                            },
+                            ?assertEqual({ok, test6, [test5, test6]}, erl_migrate:apply_upgrades(ArgsO)),
+                            ?assertEqual(
+                                2,
+                                length(
+                                    ets:match_object(dummy_observer_calls,
+                                        {start, schema_name_3, schema_instance_2, '_'})
+                                )
+                            ),
+                            ?assertEqual(
+                                1,
+                                length(
+                                    ets:match_object(dummy_observer_calls,
+                                        {start, schema_name_3, schema_instance_2, test5})
+                                )
+                            ),
+                            ?assertEqual(
+                                1,
+                                length(
+                                    ets:match_object(dummy_observer_calls,
+                                        {ok, schema_name_3, schema_instance_2, test5, '_'})
+                                )
+                            ),
+                            ?assertEqual(
+                                1,
+                                length(
+                                    ets:match_object(dummy_observer_calls,
+                                        {ok, schema_name_3, schema_instance_2, test6, '_'})
+                                )
+                            ),
+                            ?assertEqual(
+                                1,
+                                length(
+                                    ets:match_object(dummy_observer_calls,
+                                        {run_finished, schema_name_3, schema_instance_2, {ok, test6,
+                                            [test5, test6]}})
+                                )
+                            ),
+                            ets:delete_all_objects(dummy_observer_calls)
+                        end
+                    },
+                    {"Test downgrade run log",
+                        fun() ->
+                            Args5 = ?ARGS#{schema_instance => schema_instance_3, schema_name => schema_name_3},
+                            ?assertEqual({ok, test5, [test6]}, erl_migrate:apply_downgrades(Args5, 1)),
+                            Last = erl_migrate:get_last_migration_run(Args5),
+                            ?assertEqual(down, Last#erl_migration_runs.direction),
+                            ?assertEqual(ok, Last#erl_migration_runs.status)
                         end
                     }
                 ]
