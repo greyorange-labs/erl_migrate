@@ -351,7 +351,7 @@ run_revision(Direction, RevId, ModuleName, Args) ->
         DurationMs = erlang:monotonic_time(millisecond) - StartMs,
         update_history(RevId, Args, Direction),
         ok = write_run_log(
-            RevId, Args, Direction, ok, AttemptTs, StartedAt, DurationMs, undefined, undefined
+            RevId, Args, Direction, ok, AttemptTs, StartedAt, get_current_time(), undefined, undefined
         ),
         notify_observer(on_revision_ok, Args, [RevId, DurationMs]),
         ok
