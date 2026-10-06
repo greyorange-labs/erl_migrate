@@ -366,7 +366,7 @@ run_revision(Direction, RevId, ModuleName, Args) ->
                 failed,
                 AttemptTs,
                 StartedAt,
-                FailMs,
+                get_current_time(),
                 {Class, Reason},
                 StackTrace
             ),
