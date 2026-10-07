@@ -4,6 +4,7 @@
 
 -define(TABLE_1, erl_migrations).
 -define(TABLE_2, erl_migrations_history).
+-define(TABLE_3, db_migration_runs).
 
 -record(erl_migrations, {
     id :: {SchemaInstance :: any(), SchemaName :: any()},
@@ -16,6 +17,19 @@
     id :: {SchemaInstance :: any(), SchemaName :: any()},
     operation :: up | down,
     timestamp :: calendar:local_time()
+}).
+
+-record(db_migration_runs, {
+    id :: {Tag :: any(), MigrationName :: atom(), AttemptTs :: integer()},
+    tag :: any(),
+    migration_name :: atom(),
+    direction :: up | down,
+    status :: running | ok | failed,
+    started_at :: calendar:local_time(),
+    finished_at :: calendar:local_time() | undefined,
+    error_reason :: {Class :: atom(), Reason :: any()} | undefined,
+    stacktrace :: binary() | undefined,
+    node :: node()
 }).
 
 get_current_time() ->
@@ -57,8 +71,24 @@ init_db_tables() ->
                     throw({error, Reason2})
             end
     end,
+    case lists:member(?TABLE_3, mnesia:system_info(tables)) of
+        true ->
+            ok;
+        false ->
+            Attr3 =
+                [
+                    {disc_copies, [node()]},
+                    {attributes, record_info(fields, db_migration_runs)}
+                ],
+            case mnesia:create_table(?TABLE_3, Attr3) of
+                {atomic, ok} ->
+                    ok;
+                {aborted, Reason3} ->
+                    throw({error, Reason3})
+            end
+    end,
     TimeOut = application:get_env(erl_migrate, table_load_timeout, 10000),
-    ok = mnesia:wait_for_tables([?TABLE_1, ?TABLE_2], TimeOut).
+    ok = mnesia:wait_for_tables([?TABLE_1, ?TABLE_2, ?TABLE_3], TimeOut).
 
 %%
 %% Functions related to migration info
@@ -234,20 +264,24 @@ apply_upgrades(#{schema_name := Schema, schema_instance := Instance} = Args) ->
                     print("No migrations to apply!"),
                     {ok, CurrHead, []};
                 RevList ->
-                    NewHead =
+                    _ =
                         lists:foldl(
                             fun(RevId, _Acc) ->
                                 ModuleName = list_to_atom(atom_to_list(RevId) ++ "_erl_migration"),
                                 print("Applying migration: ~p~n", [RevId]),
-                                ModuleName:up(),
-                                update_history(RevId, Args, up),
-                                RevId
+                                ok = run_revision(up, RevId, ModuleName, Args),
+                                %% Advance the head per revision so a mid-batch failure
+                                %% resumes from the last applied revision instead of
+                                %% re-running already-applied revisions on the next boot.
+                                update_head(RevId, Args),
+                                ok
                             end,
-                            CurrHead,
+                            ok,
                             RevList
                         ),
-                    update_head(NewHead, Args),
+                    NewHead = lists:last(RevList),
                     print("~p.~p: All pending migration successfully applied.", [Schema, Instance]),
+                    notify_observer(on_run_finished, Args, [{ok, NewHead, RevList}]),
                     {ok, NewHead, RevList}
             end;
         DanglingMigrations ->
@@ -265,6 +299,7 @@ apply_downgrades(#{schema_name := Schema, schema_instance := Instance} = Args, D
     update_head(NewHead, Args),
     print("All downgrades successfully applied"),
     print("New head is ~p", [NewHead]),
+    notify_observer(on_run_finished, Args, [{ok, NewHead, DownRevList}]),
     {ok, NewHead, DownRevList}.
 
 -spec downgrade(
@@ -289,10 +324,148 @@ downgrade(CurrHead, Args, DownNum, NewDownRevList) ->
             {CurrentHead, NewDownRevList};
         true ->
             print("Running downgrade ~p -> ~p ~n", [CurrentHead, ParentHead]),
-            ModuleName:down(),
-            update_history(CurrHead, Args, down),
+            ok = run_revision(down, CurrHead, ModuleName, Args),
             downgrade(ModuleName:get_prev_rev(), Args, DownNum - 1, NewDownRevList ++ [CurrHead])
     end.
+
+%%
+%% Functions related to run observability
+%%
+
+-spec run_revision(
+    Direction :: up | down,
+    RevId :: atom(),
+    ModuleName :: module(),
+    Args :: maps:map()
+) -> ok.
+run_revision(Direction, RevId, ModuleName, Args) ->
+    AttemptTs = erlang:system_time(microsecond),
+    StartedAt = get_current_time(),
+    ok = write_run_log(
+        RevId, Args, Direction, running, AttemptTs, StartedAt, undefined, undefined, undefined
+    ),
+    notify_observer(on_revision_start, Args, [RevId]),
+    StartMs = erlang:monotonic_time(millisecond),
+    try
+        ModuleName:up(),
+        DurationMs = erlang:monotonic_time(millisecond) - StartMs,
+        update_history(RevId, Args, Direction),
+        ok = write_run_log(
+            RevId, Args, Direction, ok, AttemptTs, StartedAt, get_current_time(), undefined, undefined
+        ),
+        notify_observer(on_revision_ok, Args, [RevId, DurationMs]),
+        ok
+    catch
+        Class:Reason:Stack ->
+            FailMs = erlang:monotonic_time(millisecond) - StartMs,
+            StackTrace = format_stacktrace(Stack),
+            ok = write_run_log(
+                RevId,
+                Args,
+                Direction,
+                failed,
+                AttemptTs,
+                StartedAt,
+                get_current_time(),
+                {Class, Reason},
+                StackTrace
+            ),
+            notify_observer(on_revision_failed, Args, [RevId, FailMs, {Class, Reason, Stack}]),
+            erlang:raise(Class, Reason, Stack)
+    end.
+
+-spec write_run_log(
+    RevId :: atom(),
+    Args :: maps:map(),
+    Direction :: up | down,
+    Status :: running | ok | failed,
+    AttemptTs :: integer(),
+    StartedAt :: calendar:local_time(),
+    FinishedAt :: calendar:local_time() | undefined,
+    ErrorReason :: {Class :: atom(), Reason :: any()} | undefined,
+    StackTrace :: binary() | undefined
+) -> ok.
+write_run_log(RevId, Args, Direction, Status, AttemptTs, StartedAt, FinishedAt, ErrorReason, StackTrace) ->
+    Tag = run_tag(Args),
+    Id = {Tag, RevId, AttemptTs},
+    Rec = #db_migration_runs{
+        id = Id,
+        tag = Tag,
+        migration_name = RevId,
+        direction = Direction,
+        status = Status,
+        started_at = StartedAt,
+        finished_at = FinishedAt,
+        error_reason = ErrorReason,
+        stacktrace = StackTrace,
+        node = node()
+    },
+    {atomic, ok} = mnesia:transaction(fun() -> mnesia:write(?TABLE_3, Rec, write) end),
+    ok.
+
+-spec run_tag(Args :: maps:map()) -> any().
+run_tag(Args) when is_map(Args) ->
+    maps:get(run_tag, Args, maps:get(schema_name, Args, undefined)).
+
+-spec notify_observer(Callback :: atom(), Args :: maps:map(), Payload :: list()) -> ok.
+notify_observer(Callback, Args, Payload) ->
+    Schema = maps:get(schema_name, Args, undefined),
+    Instance = maps:get(schema_instance, Args, undefined),
+    case get_observer(Args) of
+        undefined ->
+            ok;
+        Observer ->
+            CallArgs = [Schema, Instance | Payload] ++ [Args],
+            _ = try apply(Observer, Callback, CallArgs)
+                catch _:_ -> ok
+            end,
+            ok
+    end.
+
+-spec get_observer(Args :: maps:map()) -> module() | undefined.
+get_observer(Args) when is_map(Args) ->
+    case maps:get(run_log_observer, Args, undefined) of
+        undefined ->
+            undefined;
+        Observer when is_atom(Observer) ->
+            Observer
+    end.
+
+-spec format_stacktrace(Stack :: list()) -> binary().
+format_stacktrace(Stack) ->
+    iolist_to_binary(io_lib:format("~p", [Stack])).
+
+-spec get_last_migration_run(
+    Args :: maps:map()
+) -> #db_migration_runs{} | none.
+get_last_migration_run(Args) when is_map(Args) ->
+    Pattern = #db_migration_runs{tag = run_tag(Args), _ = '_'},
+    Rows = mnesia:dirty_match_object(?TABLE_3, Pattern),
+    case Rows of
+        [] ->
+            none;
+        _ ->
+            lists:foldl(
+                fun(Run, Last) ->
+                    case attempt_ts(Run) > attempt_ts(Last) of
+                        true -> Run;
+                        false -> Last
+                    end
+                end,
+                hd(Rows),
+                tl(Rows)
+            )
+    end.
+
+-spec get_run_log(
+    Args :: maps:map()
+) -> list(#db_migration_runs{}).
+get_run_log(Args) when is_map(Args) ->
+    Pattern = #db_migration_runs{tag = run_tag(Args), _ = '_'},
+    mnesia:dirty_match_object(?TABLE_3, Pattern).
+
+attempt_ts(#db_migration_runs{id = {_Tag, _RevId, AttemptTs}}) ->
+    AttemptTs.
 
 -spec append_revision_tree(
     List1 :: list(),
@@ -524,7 +697,7 @@ maybe_print_warning([_ | _] = Errs, FilePath) ->
 
 print_reminder(FilePath) ->
     Sections = ["Migration", "Description", "Rationale", "Changes", "Data Impact",
-        "Rollback Considerations", "Performance Impact", "Dependencies", "Testing Notes"],
+        "Rollback Considerations", "Re-run Safety", "Performance Impact", "Dependencies", "Testing Notes"],
     QuotedSections =
         lists:map(fun(S) -> "\"" ++ S ++ "\"" end, Sections),
     SectionsStr = string:join(QuotedSections, ", "),

@@ -23,6 +23,13 @@
 ### Rollback Considerations
 [Document any special considerations or manual steps needed to rollback this migration]
 
+### Re-run Safety
+[Document whether this migration is safe to re-run if a failure occurs mid-way.
+Cover: does it run inside a transaction, is it idempotent, and what manual
+cleanup (if any) is required before a retry. The framework re-attempts the
+failing revision unchanged on the next boot - it never re-runs already-applied
+revisions, but the failing revision itself WILL be attempted again.]
+
 ### Performance Impact
 [Note any potential performance implications during or after the migration]
 
